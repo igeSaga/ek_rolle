@@ -36,7 +36,7 @@ rolle_bound<-spTransform(rolle_bound,CRSobj = CRS("+init=epsg:21781"))
 
 ##Gebäude Amtliche Vermessung (AV)
 
-```{r reader tlm}
+```{r reader av}
 rolle_build<-readOGR(layer = "MOVD_CAD_TPR_BATHS_S", dsn = paste(dataPath,"11_Cadastre_AmtlVermessung/Cadastre_9719_NO66KX/Cadastre",sep=""))
 
 #reprojection
@@ -156,6 +156,7 @@ osm.inf<-sapply(rolle_build_osm@polygons, function(x) {
 osm.inf<-as.data.frame(t(osm.inf))
 names(osm.inf)<-c("idGeom","areaOSM")
 rolle_build_osm$idGeom<-osm.inf$idGeom
+rolle_build_osm$areaOrig<-osm.inf$areaOSM
 
 #earasing AV from OSM (computed using st -> much faster!!)
 #might takes a while...
@@ -171,7 +172,12 @@ diff.sp$areaCrop<-sapply(diff.sp@polygons, function(x) {
   as.numeric(x@area)
   })
 
-rolle_build_osm_excl<-diff.sp
+diff.sp$areaCrop2<-rgeos::gArea(diff.sp,byid=TRUE)
+
+diff.df<-merge(diff.sp@data,osm.inf,by="idGeom")
+diff.df$areaDiff<-diff.df$areaCrop/diff.df$areaOSM
+
+rolle_build_osm_excl<-diff.sp[diff.sp$idGeom%in%diff.df$idGeom[diff.df$areaDiff>0.9],]
 
 save(rolle_build_osm_excl,file = "data/osmBuildRolle_excl.Rdata")
 
@@ -342,6 +348,7 @@ m <- leaflet() %>%
               opacity = 1,
               weight=1,
               fillColor = "grey",
+              popup=,
               group = "Haeuser (OSM, exkl.)")%>%
   
     addCircles(data=rolle_gwr.wgs,
