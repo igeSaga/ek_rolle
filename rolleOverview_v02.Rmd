@@ -14,6 +14,8 @@ library(raster)
 library(rgeos)
 library(osmdata)
 library(sf)
+library(htmlwidgets)
+
 
 rm(list=ls())
 
@@ -148,39 +150,31 @@ load("data/osmBuildRolle.Rdata")
 ##OSM nicht in AV
 
 ```{r filter osm}
-#getting some info on osm geometries, such as interneal id or area
-osm.inf<-sapply(rolle_build_osm@polygons, function(x) {
-  as.numeric(c(x@ID,x@area))
-  })
-
-osm.inf<-as.data.frame(t(osm.inf))
-names(osm.inf)<-c("idGeom","areaOSM")
-rolle_build_osm$idGeom<-osm.inf$idGeom
-rolle_build_osm$areaOrig<-osm.inf$areaOSM
-
-#earasing AV from OSM (computed using st -> much faster!!)
-#might takes a while...
-osm.st <- st_as_sf(rolle_build_osm[,"idGeom"])
-av.st <- st_as_sf(rolle_build[,"iid"])
-diff <- st_difference(osm.st, st_union(st_combine(av.st)))
-
-#back to sp
-diff.sp <- as(diff, "Spatial")
-
-#making area explicit form cropped osm
-diff.sp$areaCrop<-sapply(diff.sp@polygons, function(x) {
-  as.numeric(x@area)
-  })
-
-diff.sp$areaCrop2<-rgeos::gArea(diff.sp,byid=TRUE)
-
-diff.df<-merge(diff.sp@data,osm.inf,by="idGeom")
-diff.df$areaDiff<-diff.df$areaCrop/diff.df$areaOSM
-
-rolle_build_osm_excl<-diff.sp[diff.sp$idGeom%in%diff.df$idGeom[diff.df$areaDiff>0.9],]
-
-save(rolle_build_osm_excl,file = "data/osmBuildRolle_excl.Rdata")
-
+# #getting some info on osm geometries, such as interneal id or area
+# rolle_build_osm$areaOrig<-rgeos::gArea(rolle_build_osm,byid=TRUE)
+# 
+# #earasing AV from OSM (computed using st -> much faster!!)
+# #might takes a while...
+# osm.st <- st_as_sf(rolle_build_osm[,"iid"])
+# av.st <- st_as_sf(rolle_build[,"iid"])
+# diff <- st_difference(osm.st, st_union(st_combine(av.st)))
+# 
+# #back to sp
+# diff.sp <- as(diff, "Spatial")
+# 
+# #making area explicit form cropped osm
+# diff.sp$areaCrop<-rgeos::gArea(diff.sp,byid=TRUE)
+# 
+# diff.df<-merge(diff.sp@data,rolle_build_osm@data[,c("iid","areaOrig")],by="iid")
+# diff.df$areaDiff<-diff.df$areaCrop/diff.df$areaOrig
+# 
+# diff.sp@data<-merge(diff.sp@data,diff.df,by="iid")
+# 
+# rolle_build_osm_excl<-diff.sp[diff.sp$areaDiff>0.9,]
+# 
+#rolle_build_osm_excl<-spTransform(rolle_build_osm_excl,CRSobj = CRS("+init=epsg:21781"))
+#
+# save(rolle_build_osm_excl,file = "data/osmBuildRolle_excl.Rdata")
 load("data/osmBuildRolle_excl.Rdata")
 ```
 
@@ -251,7 +245,6 @@ gwr_on_bld_multi<-gwr_on_bld_multi[-1,]
 #there are now still duplicates in terms of gwr points that intersect with multiple buildings
 #these duplicates are not resolved at the moment, 
 #however, they cause that the sum of empty+OK+multiple equals to more than the number of gwr buildings
-
 un<-unique(c(gwr_ok,gwr_mult))
 gwr_empty<-rolle_gwr@data[!rolle_gwr$iid%in%un,"iid"]
 
@@ -272,19 +265,56 @@ rolle_gwr_empty<-rolle_gwr[rolle_gwr$iid%in%gwr_empty,]
 #note: faced problems with merge()...
 gwr_on_bld_mult_clean <- left_join(gwr_on_bld_mult_clean, rolle_gwr@data, by = c('iidgwr'='iid'))
 
-#resolving the one gwr per bld that has max area
+#resolving the one gwr per bld that has most similar area as stored in gwr
 gwr_on_bld_mult_clean$GAREA[is.na(gwr_on_bld_mult_clean$GAREA)]<-0
 gwr_on_bld_mult_clean$areaTemp<-as.numeric(gwr_on_bld_mult_clean$GAREA)+
   rnorm(n = nrow(gwr_on_bld_mult_clean),mean = 0,sd=1)
 
+gwr_on_bld_mult_clean<-left_join(gwr_on_bld_mult_clean, rolle_build@data[,c("iid","SHAPE_AREA")], by = c('iidbld'='iid'))
+
+gwr_on_bld_mult_clean$areaDiff<-abs(as.numeric(gwr_on_bld_mult_clean$areaTemp)-gwr_on_bld_mult_clean$SHAPE_AREA)
+
 gwr_on_bld_mult_single<-gwr_on_bld_mult_clean %>%
   group_by(iidbld) %>%
-  filter(areaTemp == max(areaTemp,na.rm=T))
+  filter(areaDiff == min(areaDiff,na.rm=T))
 
+gwr_on_bld_mult_single$areaDiff<-NULL
 gwr_on_bld_mult_single$areaTemp<-NULL
 
 rolle_bld_gwr_mult<-rolle_build[rolle_build$iid%in%gwr_on_bld_mult_single$iidbld,]
 rolle_bld_gwr_mult@data<-left_join(rolle_bld_gwr_mult@data, gwr_on_bld_mult_single, by = c('iid'='iidbld'))
+
+rolle_build_excl<-rolle_build[!rolle_build$iid%in%gwr_on_bld_mult_single$iidbld,]
+```
+
+
+## Restliche GWR mit OSM (!=AV) verscheiden
+
+```{r intersection}
+#all data requires a unique identifier 
+rolle_build_osm_excl$iid<-1:nrow(rolle_build_osm_excl)
+rolle_gwr_empty$iid<-1:nrow(rolle_gwr_empty)
+
+#spatial intersection of osm with gwr
+ov<-sp::over(rolle_build_osm_excl[,"iid"],rolle_gwr_empty[,"iid"], returnList = TRUE)
+
+gwr_on_osm<-data.frame(iidosm=NA,iidgwr=NA)
+for(i in 1:length(ov)){
+  ov.i<-ov[[i]]
+  if(nrow(ov.i)==1){
+    gwr_on_osm<-rbind(gwr_on_osm,data.frame(iidosm=i,iidgwr=ov.i$iid))
+  }
+}
+gwr_on_osm<-gwr_on_osm[-1,]
+
+
+rolle_osm_gwr<-rolle_build_osm_excl[rolle_build_osm_excl$iid%in%gwr_on_osm$iidosm,]
+rolle_osm_gwr@data<-merge(rolle_osm_gwr@data,gwr_on_osm,by.x="iid",by.y="iidosm")
+rolle_osm_gwr@data<-merge(rolle_osm_gwr@data,rolle_gwr_empty@data,by.x="iidgwr",by.y="iid")
+
+rolle_build_osm_excl<-rolle_build_osm_excl[!rolle_build_osm_excl$iid%in%gwr_on_osm$iidosm,]
+
+rolle_gwr_empty<-rolle_gwr_empty[!rolle_gwr_empty$iid%in%gwr_on_osm$iidgwr,]
 ```
 
 
@@ -293,18 +323,17 @@ rolle_bld_gwr_mult@data<-left_join(rolle_bld_gwr_mult@data, gwr_on_bld_mult_sing
 ```{r geoviz, fig.width = 10, fig.height = 5.5}
 #erst alle daten in wgs projezieren fuer leaflet projektion
 rolle_bound.wgs<-spTransform(rolle_bound,CRSobj = CRS("+init=epsg:4326"))
-rolle_build_osm.wgs<-spTransform(rolle_build_osm,CRSobj = CRS("+init=epsg:4326"))
-rolle_build_osm_excl.wgs<-spTransform(rolle_build_osm_excl,CRSobj = CRS("+init=epsg:4326"))
-rolle_gwr.wgs<-spTransform(rolle_gwr,CRSobj = CRS("+init=epsg:4326"))
+
 rolle_build.wgs<-spTransform(rolle_build,CRSobj = CRS("+init=epsg:4326"))
+
+rolle_build_osm_excl.wgs<-spTransform(rolle_build_osm_excl,CRSobj = CRS("+init=epsg:4326"))
+rolle_build_excl.wgs<-spTransform(rolle_build_excl,CRSobj = CRS("+init=epsg:4326"))
+
+rolle_gwr.wgs<-spTransform(rolle_gwr,CRSobj = CRS("+init=epsg:4326"))
 
 rolle_bld_gwr_mult.wgs<-spTransform(rolle_bld_gwr_mult,CRSobj = CRS("+init=epsg:4326"))
 rolle_bld_gwr.wgs<-spTransform(rolle_bld_gwr,CRSobj = CRS("+init=epsg:4326"))
-
-areaInd<-as.numeric(rolle_bld_gwr.wgs$GAREA)/rolle_bld_gwr.wgs$areaPoly
-rolle_bld_gwr_area.wgs<-rolle_bld_gwr.wgs[areaInd>1.2|areaInd<0.8,]
-areaInd<-as.numeric(rolle_bld_gwr_mult.wgs$GAREA)/rolle_bld_gwr_mult.wgs$areaPoly
-rolle_bld_gwr_mult_area.wgs<-rolle_bld_gwr_mult.wgs[areaInd>1.2|areaInd<0.8,]
+rolle_osm_gwr.wgs<-spTransform(rolle_osm_gwr,CRSobj = CRS("+init=epsg:4326"))
 
 rolle_gwr_empty.wgs<-spTransform(rolle_gwr_empty,CRSobj = CRS("+init=epsg:4326"))
 
@@ -330,31 +359,30 @@ m <- leaflet() %>%
               weight=1,
               fillColor = "grey",
               popup=rolle_build.wgs$areaPoly,
-              group = "Haeuser (alle)")%>%
+              group = "Haeuser (AV)")%>%
   
-  addPolygons(data=rolle_build_osm.wgs,
+  addPolygons(data=rolle_build_osm_excl.wgs,
               stroke = TRUE,
               fillOpacity = 0.4, 
               color = "blue",
               opacity = 1,
               weight=1,
               fillColor = "grey",
-              group = "Haeuser (OSM)")%>%
+              group = "Haeuser (OSM, kein match)")%>%
   
-    addPolygons(data=rolle_build_osm_excl.wgs,
+    addPolygons(data=rolle_build_excl.wgs,
               stroke = TRUE,
               fillOpacity = 0.4, 
-              color = "pink",
+              color = "blue",
               opacity = 1,
               weight=1,
               fillColor = "grey",
-              popup=,
-              group = "Haeuser (OSM, exkl.)")%>%
+              group = "Haeuser (AV, kein match)")%>%
   
     addCircles(data=rolle_gwr.wgs,
               color = "grey",
               radius=5,
-              group = "GWR (alle)",
+              group = "GWR (Alle)",
              popup = as.character(rolle_gwr.wgs$iid))%>%
   
   addPolygons(data=rolle_bld_gwr.wgs,
@@ -365,7 +393,7 @@ m <- leaflet() %>%
               weight=1,
               fillColor = "red",
               popup=rolle_bld_gwr.wgs$areaPoly,
-              group = "Haeuser/GWR (single)")%>%
+              group = "AV2GWR (single match)")%>%
 
   addPolygons(data=rolle_bld_gwr_mult.wgs,
               stroke = TRUE,
@@ -375,57 +403,56 @@ m <- leaflet() %>%
               weight=1,
               fillColor = "orange",
               popup=rolle_bld_gwr_mult.wgs$areaPoly,
-              group = "Haeuser/GWR (mult)")%>%
+              group = "AV2GWR (multi match)")%>%
   
-  addPolygons(data=rolle_bld_gwr_area.wgs,
+    addPolygons(data=rolle_osm_gwr.wgs,
               stroke = TRUE,
               fillOpacity = 0.4, 
-              color = "black",
-              opacity = 0,
+              color = "orange",
+              opacity = 1,
               weight=1,
-              fillColor = "black",
-              popup=rolle_bld_gwr_area.wgs$areaPoly,
-              group = "Haeuser/GWR (single, area)")%>%
-  
-  addPolygons(data=rolle_bld_gwr_mult_area.wgs,
-              stroke = TRUE,
-              fillOpacity = 0.4, 
-              color = "black",
-              opacity = 0,
-              weight=1,
-              fillColor = "black",
-              popup=rolle_bld_gwr_mult_area.wgs$areaPoly,
-              group = "Haeuser/GWR (mult, area)")%>%
+              fillColor = "orange",
+              popup=rolle_bld_gwr_mult.wgs$areaPoly,
+              group = "OSM2GWR (single match)")%>%
 
     addCircles(data=rolle_gwr_empty.wgs,
               color = "yellow",
               radius=5,
-              group = "GWR (nicht gefunden)")%>%
+              group = "GWR (kein match)")%>%
   
   addLayersControl(
     baseGroups = c("normal", "OSM (b/w)","ESRI"),
     overlayGroups = c("Gemeindegrenze", 
-                      "Haeuser (alle)",
-                      "Haeuser (OSM)",
-                      "Haeuser (OSM, exkl.)",
-                      "GWR (alle)",
-                      "Haeuser/GWR (single)",
-                      "Haeuser/GWR (mult)",
-                      "GWR (nicht gefunden)",
-                      "Haeuser/GWR (mult, area)",
-                      "Haeuser/GWR (single, area)"),
+                      "Haeuser (AV)",
+                      "Haeuser (OSM, kein match)",
+                      "Haeuser (AV, kein match)",
+                      "GWR (Alle)",
+                      "AV2GWR (single match)",
+                      "AV2GWR (multi match)",
+                      "OSM2GWR (single match)",
+                      "GWR (kein match)"),
     options = layersControlOptions(collapsed = F)
   )%>%
   hideGroup(c("Gemeindegrenze", 
-              "Haeuser (alle)",
-              "Haeuser (OSM)",
-              "GWR (alle)",
-              "Haeuser/GWR (mult, area)",
-              "Haeuser/GWR (single, area)",
-              "Haeuser (OSM, exkl.)"))
+                      "Haeuser (AV)",
+                      "Haeuser (OSM, kein match)",
+                      "Haeuser (AV, kein match)",
+                      "GWR (Alle)",
+                      "AV2GWR (single match)",
+                      "AV2GWR (multi match)",
+                      "OSM2GWR (single match)"))
 
 #leaflet karte ausführen
 m
 ```
 
+##Alles Speichern
+
+```{r}
+#html karte speichern
+wd<-getwd()
+htmlwidgets::saveWidget(m, file=paste(wd,"/data/map.html",sep=""))
+
+
+```
 
