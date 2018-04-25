@@ -14,7 +14,6 @@ library(raster)
 library(rgeos)
 library(osmdata)
 library(sf)
-library(htmlwidgets)
 
 
 rm(list=ls())
@@ -451,8 +450,19 @@ m
 ```{r}
 #html karte speichern
 wd<-getwd()
-htmlwidgets::saveWidget(m, file=paste(wd,"/data/map.html",sep=""))
+htmlwidgets::saveWidget(m, file=paste(wd,"/Output/map.html",sep=""))
 
+#html karte speichern
+rolle_bld_gwr_out<-rolle_bld_gwr[,c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ")]
+rolle_bld_gwr_mult_out<-rolle_bld_gwr_mult[,c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ")]
+rolle_osm_gwr_out<-rolle_osm_gwr[,c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ")]
 
+rolle_bld_gwr_out$source<-"AVs"
+rolle_bld_gwr_mult_out$source<-"AVm"
+rolle_osm_gwr_out$source<-"OSM"
+
+rolle_bld_out<-rbind(rolle_bld_gwr_out,rolle_bld_gwr_mult_out,rolle_osm_gwr_out)
+
+save(rolle_bld_out,file="Output/rolle_buildings_with_gwr.Rdata")
 ```
 
