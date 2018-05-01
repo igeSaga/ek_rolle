@@ -21,6 +21,8 @@ library(raster)
 library(rgeos)
 library(osmdata)
 library(sf)
+library(ggplot2)
+library(gridExtra)
 
 #empty workspace
 rm(list=ls())
@@ -84,14 +86,14 @@ rolle_gwr<-spTransform(rolle_gwr,CRSobj = CRS("+init=epsg:21781"))
 rolle_gwr<-rolle_gwr[is.na(rolle_gwr$GABBJ),]
 
 #filter/rename attributes
-rolle_gwr<-rolle_gwr[,c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ")]
+rolle_gwr<-rolle_gwr[,c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ","GANZWHG","GABBJ")]
 
 ##mont-sur-rolle
 ms_rolle_gwr<-readOGR(layer = "OIT_OIT_TPR_RCB_BATIMENT", dsn = paste(dataPath,"02_GWR/mont_sur_rolle_gwr_shp",sep=""))
 
 #filter/rename attributes
-ms_rolle_gwr<-ms_rolle_gwr[,c("EGID","STATUT_BAT","CATEGORIE","CLASSE","SURFACE","NB_NIV_TOT","CONS_ANNEE")]
-names(ms_rolle_gwr)<-c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ")
+ms_rolle_gwr<-ms_rolle_gwr[,c("EGID","STATUT_BAT","CATEGORIE","CLASSE","SURFACE","NB_NIV_TOT","CONS_ANNEE","NB_LOG","DEMOL_ANNE")]
+names(ms_rolle_gwr)<-c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ","GANZWHG","GABBJ")
 
 #reprojection
 ms_rolle_gwr<-spTransform(ms_rolle_gwr,CRSobj = CRS("+init=epsg:21781"))
@@ -182,8 +184,8 @@ In einem ersten Analyseschritt werden alle OSM Gebäude herausgefiltert, welche 
 # 
 # rolle_build_osm_excl<-diff.sp[diff.sp$areaDiff>0.9,]
 # 
-#rolle_build_osm_excl<-spTransform(rolle_build_osm_excl,CRSobj = CRS("+init=epsg:21781"))
-#
+# rolle_build_osm_excl<-spTransform(rolle_build_osm_excl,CRSobj = CRS("+init=epsg:21781"))
+# 
 # save(rolle_build_osm_excl,file = "data/osmBuildRolle_excl.Rdata")
 load("data/osmBuildRolle_excl.Rdata")
 ```
@@ -303,6 +305,7 @@ rolle_build_excl<-rolle_build[!rolle_build$iid%in%gwr_on_bld_mult_single$iidbld,
 ```
 
 
+
 ## Restliche GWR mit OSM (!=AV) verscheiden
 Die GWR Punkte welche im vorangegangenen Schritt nicht zugeordnet werden konnten, werden nun in gleicher Art und Weise wie oben mit den Gebäuden aus OSM verschnitten (resp. mit den Gebäuden aus OSM, welche nicht in der AV vorkommen).
 ```{r intersectionOSM}
@@ -330,6 +333,71 @@ rolle_osm_gwr@data<-merge(rolle_osm_gwr@data,rolle_gwr_empty@data,by.x="iidgwr",
 rolle_build_osm_excl<-rolle_build_osm_excl[!rolle_build_osm_excl$iid%in%gwr_on_osm$iidosm,]
 
 rolle_gwr_empty<-rolle_gwr_empty[!rolle_gwr_empty$iid%in%gwr_on_osm$iidgwr,]
+```
+
+## Gebäude Details
+```{r explore, fig.height=15, fig.width=15, message=FALSE, warning=FALSE}
+#combine all build. data
+rolle_bld_gwr_out<-rolle_bld_gwr[,c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ","GANZWHG","GABBJ")]
+rolle_bld_gwr_mult_out<-rolle_bld_gwr_mult[,c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ","GANZWHG","GABBJ")]
+rolle_osm_gwr_out<-rolle_osm_gwr[,c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ","GANZWHG","GABBJ")]
+
+rolle_bld_gwr_out$source<-"AVs"
+rolle_bld_gwr_mult_out$source<-"AVm"
+rolle_osm_gwr_out$source<-"OSM"
+
+rolle_bld_out<-rbind(rolle_bld_gwr_out,rolle_bld_gwr_mult_out,rolle_osm_gwr_out)
+
+#add explicit attribute data
+gwrCodes<-read.csv("data/gwrCodes.csv")
+names(gwrCodes)[1]<-"id"
+rolle_bld_out$GKLAS<-as.numeric(rolle_bld_out$GKLAS)
+attrs<-left_join(rolle_bld_out@data, gwrCodes, by = c('GKLAS'='id'))
+attrs$fullText<-NULL
+names(attrs)[ncol(attrs)]<-"GKLAS_text"
+
+rolle_bld_out@data<-attrs
+
+p1<-ggplot(rolle_bld_out@data, aes(x=as.numeric(GAREA),fill=source))+
+  geom_density(alpha=0.5)+
+  theme_minimal()+
+  ggtitle(paste("Gebaeudeflaeche / n noData = ",sum(is.na(rolle_bld_out@data$GAREA))," von n Geb. ",nrow(rolle_bld_out),sep=""))+
+  xlab("")
+
+p2<-ggplot(rolle_bld_out@data, aes(x=as.numeric(GBAUJ),fill=source))+
+  geom_density(alpha=0.5)+
+  theme_minimal()+
+  ggtitle(paste("Baujahr / n noData = ",sum(is.na(rolle_bld_out@data$GBAUJ))," von n Geb. ",nrow(rolle_bld_out),sep=""))+
+  xlab("")
+
+p3<-ggplot(rolle_bld_out@data, aes(x=as.numeric(GASTW),fill=source))+
+  geom_density(alpha=0.5)+
+  theme_minimal()+
+  ggtitle(paste("Stockwerke / n noData = ",sum(is.na(rolle_bld_out@data$GASTW))," von n Geb. ",nrow(rolle_bld_out),sep=""))+
+  xlab("")
+
+p4<-ggplot(rolle_bld_out@data, aes(x=as.numeric(GASTW),fill=source))+
+  geom_density(alpha=0.5)+
+  theme_minimal()+
+  ggtitle(paste("Stockwerke / n noData = ",sum(is.na(rolle_bld_out@data$GASTW))," von n Geb. ",nrow(rolle_bld_out),sep=""))+
+  xlab("")
+
+p5<-ggplot(rolle_bld_out@data, aes(x=as.numeric(GANZWHG),fill=source))+
+  geom_density(alpha=0.5)+
+  theme_minimal()+
+  ggtitle(paste("Anzahl Wohnungen / n noData = ",sum(is.na(rolle_bld_out@data$GANZWHG))," von n Geb. ",nrow(rolle_bld_out),sep=""))+
+  xlim(c(0,30))+
+  xlab("")
+
+p6<-ggplot(rolle_bld_out@data, aes(x=GKLAS_text))+
+  geom_bar()+
+  theme_minimal()+
+  ggtitle(paste("Gebaeudeklassen / n noData = ",sum(is.na(rolle_bld_out@data$GKLAS_text))," von n Geb. ",nrow(rolle_bld_out),sep=""))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size=12))+
+  xlab("")
+
+grid.arrange(p1,p2,p3,p4,p5,p6,ncol=2)
+
 ```
 
 
@@ -466,17 +534,6 @@ Hier die Speicherung...
 #html karte speichern
 wd<-getwd()
 htmlwidgets::saveWidget(m, file=paste(wd,"/Output/map.html",sep=""),selfcontained = T)
-
-#html karte speichern
-rolle_bld_gwr_out<-rolle_bld_gwr[,c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ")]
-rolle_bld_gwr_mult_out<-rolle_bld_gwr_mult[,c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ")]
-rolle_osm_gwr_out<-rolle_osm_gwr[,c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ")]
-
-rolle_bld_gwr_out$source<-"AVs"
-rolle_bld_gwr_mult_out$source<-"AVm"
-rolle_osm_gwr_out$source<-"OSM"
-
-rolle_bld_out<-rbind(rolle_bld_gwr_out,rolle_bld_gwr_mult_out,rolle_osm_gwr_out)
 
 save(rolle_bld_out,file="Output/rolle_buildings_with_gwr.Rdata")
 ```

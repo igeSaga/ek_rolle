@@ -12,7 +12,7 @@ The respository contains all R files, required for the computational part of the
 
 ## Authors
 
-* **Curdin Derungs** - *Initial work* - [PurpleBooth](https://github.com/curdon)
+* **Curdin Derungs** - *Initial work* - [curdon](https://github.com/curdon)
 
 
 ## License
