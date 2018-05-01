@@ -1,9 +1,16 @@
 ---
-title: "Energiekonzept Rolle"
-output: html_document
+title: "Aufbereitung der Gebäudedaten für Rolle & Mont-Sur-Rolle"
+author: "Curdin Derungs"
+date: "April 2018"
+output:
+  html_document:
+      toc: true
+      toc_float: true
 ---
 
 ```{r setup, include=FALSE}
+
+#loading libraries
 library(sp)
 library(rgdal)
 library(leaflet)
@@ -15,17 +22,18 @@ library(rgeos)
 library(osmdata)
 library(sf)
 
-
+#empty workspace
 rm(list=ls())
 
-#is to be changed if working on Windows
+#working directory
+#should be changed if working on Windows
 dataPath<-"/Volumes/data$/ta/60 FuE/6096 SCCER/609635 FEEBD-II/60963505 Work Packages/JA RED/06-Daten/"
 ```
 
 
 ## Gemeindegrenzen
-
-```{r reader gemeinde, message=FALSE, warning=FALSE, paged.print=FALSE}
+Hier werden die Gemeindegrenzen eingelesen. Die Daten werden nur zur Visualisierung gebraucht. Die Daten stammen vom Gemeindeverzeichnis des BfS.
+```{r reader gemeinde, warning=FALSE, paged.print=FALSE}
 ##gemeindegrenze einlesen
 #...daten von bfs in lokalem data-order gespeichert
 rolle_bound<-readOGR(layer = "rolleboundbeide", dsn = paste(dataPath,"10_Rolle",sep=""))
@@ -36,8 +44,10 @@ rolle_bound<-spTransform(rolle_bound,CRSobj = CRS("+init=epsg:21781"))
 
 
 ##Gebäude Amtliche Vermessung (AV)
-
+Hier werden die Daten der Amtlichen Vermessung eingelesen. Die Daten wurden über [ASIT.vd](https://www.asitvd.ch/)
+bestellt.
 ```{r reader av}
+#SHP lesen
 rolle_build<-readOGR(layer = "MOVD_CAD_TPR_BATHS_S", dsn = paste(dataPath,"11_Cadastre_AmtlVermessung/Cadastre_9719_NO66KX/Cadastre",sep=""))
 
 #reprojection
@@ -53,11 +63,10 @@ rolle_build$iid<-1:nrow(rolle_build)
 ```
 
 
-##GWR Einlesen
-
-- liste für rolle und shp für ms-rolle
-```{r reader gwr}
-##rolle
+##GWR
+Hier werden die GWR Daten mit wichtigen Infomrationen zu den Gebäuden eingelesen. Die GWR Daten wurden ebenfalls bei [ASIT.vd](https://www.asitvd.ch/) bestellt.
+```{r readerGwr}
+##csv lesen
 rolle_gwr<-read.csv(paste(dataPath,"02_GWR/Rolle_GEB_02_20180420.csv",sep=""),sep = ";",encoding = "latin1")
 
 #only non-na's
@@ -96,8 +105,8 @@ rm(list=c("ms_rolle_gwr"))
 
 
 ##OSM Gebäude
-
-```{r reader osm}
+Hier werden die OSM Gebäudedaten eingelesen. Die Daten werden direkt über die OSM-API bezogen. Der Code ist auskommentiert und es werden aus Gründen der Performanz zwischengespeicherte Daten eingelesen.
+```{r readerOsm}
 # #...OSM gebaeude ueber die API direkt beziehen
 # 
 # #gebaeude von mont-sur-rolle
@@ -142,13 +151,15 @@ rm(list=c("ms_rolle_gwr"))
 # rolle_build_osm<-spTransform(rolle_build_osm,CRSobj = CRS("+init=epsg:21781"))
 # 
 # save(rolle_build_osm,file = "data/osmBuildRolle.Rdata")
+
+#zwischengespeicherte Daten einlesen
 load("data/osmBuildRolle.Rdata")
 ```
 
 
 ##OSM nicht in AV
-
-```{r filter osm}
+In einem ersten Analyseschritt werden alle OSM Gebäude herausgefiltert, welche nicht in den AV Daten enthalten sind. Gebäude gelten als alleinige OSM Gebäude wenn mehr als 90% ihrer Fläche ausserhalb von AV Gebäuden liegt. Wiederum wird aus Performanzgründen auf ein zwischengespeichertes Ergebnis zugegriffen.
+```{r filterOsm}
 # #getting some info on osm geometries, such as interneal id or area
 # rolle_build_osm$areaOrig<-rgeos::gArea(rolle_build_osm,byid=TRUE)
 # 
@@ -178,8 +189,13 @@ load("data/osmBuildRolle_excl.Rdata")
 ```
 
 ## GWR und AV verscheiden
-
-```{r intersection}
+Nun werden die AV Daten mit den GWR Daten verschnitten. Es handelt sich dabei um eine Verschneidung von Punktdaten (GWR) mit Polygondaten (AV). Dabei kann es zu Mehrdeutigkeiten kommen, die unterschieden werden müssen (ein GWR-Punkt liegt auf mehreren Gebäuden liegen, mehrere GWR-Punkte können auf einem Gebäude liegen, usw.).
+   
+Hier wird folgendermassen vorgegangen:
+- In einem ersten Schritt werden die Gebäude extrahiert, welche genau eine Verschneidung von GWR Punkt und AV Polygon haben.
+- Für die Fälle von "mehreren AV zu einem GWR"" oder "mehreren GWR zu einem AV"" wird jeweils die Kombination ausgewählt, welche übereinstimmende Angaben in Bezug auf die Gebäudefläche enthält (oder die übereinstimmensten, falls keine genaue Übereinstimmung gegeben ist).
+- Übrig bleiben die AV Gebäude ohne GWR Pendant und die GWR Punkte, welche keinem AV Gebäude zugeordnet werden konnten.
+```{r intersectionAV}
 #intersecting data
 
 #all data requires a unique identifier 
@@ -288,8 +304,8 @@ rolle_build_excl<-rolle_build[!rolle_build$iid%in%gwr_on_bld_mult_single$iidbld,
 
 
 ## Restliche GWR mit OSM (!=AV) verscheiden
-
-```{r intersection}
+Die GWR Punkte welche im vorangegangenen Schritt nicht zugeordnet werden konnten, werden nun in gleicher Art und Weise wie oben mit den Gebäuden aus OSM verschnitten (resp. mit den Gebäuden aus OSM, welche nicht in der AV vorkommen).
+```{r intersectionOSM}
 #all data requires a unique identifier 
 rolle_build_osm_excl$iid<-1:nrow(rolle_build_osm_excl)
 rolle_gwr_empty$iid<-1:nrow(rolle_gwr_empty)
@@ -318,7 +334,7 @@ rolle_gwr_empty<-rolle_gwr_empty[!rolle_gwr_empty$iid%in%gwr_on_osm$iidgwr,]
 
 
 ## Daten visualisieren
-...
+Es bleibt nur noch, die Gebäude in einer Karte darzustellen und anschliessend alle Gebäudedaten zu speichern.
 ```{r geoviz, fig.width = 10, fig.height = 5.5}
 #erst alle daten in wgs projezieren fuer leaflet projektion
 rolle_bound.wgs<-spTransform(rolle_bound,CRSobj = CRS("+init=epsg:4326"))
@@ -445,12 +461,11 @@ m <- leaflet() %>%
 m
 ```
 
-##Alles Speichern
-
-```{r}
+Hier die Speicherung...
+```{r save}
 #html karte speichern
 wd<-getwd()
-htmlwidgets::saveWidget(m, file=paste(wd,"/Output/map.html",sep=""))
+htmlwidgets::saveWidget(m, file=paste(wd,"/Output/map.html",sep=""),selfcontained = T)
 
 #html karte speichern
 rolle_bld_gwr_out<-rolle_bld_gwr[,c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ")]
