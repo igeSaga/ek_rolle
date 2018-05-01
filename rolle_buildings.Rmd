@@ -69,7 +69,7 @@ rolle_build$iid<-1:nrow(rolle_build)
 Hier werden die GWR Daten mit wichtigen Infomrationen zu den Gebäuden eingelesen. Die GWR Daten wurden ebenfalls bei [ASIT.vd](https://www.asitvd.ch/) bestellt.
 ```{r readerGwr}
 ##csv lesen
-rolle_gwr<-read.csv(paste(dataPath,"02_GWR/Rolle_GEB_02_20180420.csv",sep=""),sep = ";",encoding = "latin1")
+rolle_gwr<-read.csv(paste(dataPath,"02_GWR/Rolle_GEB-02.csv",sep=""),sep = ";",encoding = "latin1")
 
 #only non-na's
 rolle_gwr<-rolle_gwr[!is.na(rolle_gwr$GKODX),]
@@ -86,14 +86,15 @@ rolle_gwr<-spTransform(rolle_gwr,CRSobj = CRS("+init=epsg:21781"))
 rolle_gwr<-rolle_gwr[is.na(rolle_gwr$GABBJ),]
 
 #filter/rename attributes
-rolle_gwr<-rolle_gwr[,c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ","GANZWHG","GABBJ")]
+rolle_gwr<-rolle_gwr[,c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ","GANZWHG","GABBJ","GHEIZ","GENHZ","GENWW")]
 
 ##mont-sur-rolle
 ms_rolle_gwr<-readOGR(layer = "OIT_OIT_TPR_RCB_BATIMENT", dsn = paste(dataPath,"02_GWR/mont_sur_rolle_gwr_shp",sep=""))
 
+
 #filter/rename attributes
-ms_rolle_gwr<-ms_rolle_gwr[,c("EGID","STATUT_BAT","CATEGORIE","CLASSE","SURFACE","NB_NIV_TOT","CONS_ANNEE","NB_LOG","DEMOL_ANNE")]
-names(ms_rolle_gwr)<-c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ","GANZWHG","GABBJ")
+ms_rolle_gwr<-ms_rolle_gwr[,c("EGID","STATUT_BAT","CATEGORIE","CLASSE","SURFACE","NB_NIV","CONS_ANNEE","NB_LOG","DEMOL_ANNE","CHAUFF_SYS","CHAUFF_AGT","EAU_CHD_AG")]
+names(ms_rolle_gwr)<-c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ","GANZWHG","GABBJ","GHEIZ","GENHZ","GENWW")
 
 #reprojection
 ms_rolle_gwr<-spTransform(ms_rolle_gwr,CRSobj = CRS("+init=epsg:21781"))
@@ -338,9 +339,9 @@ rolle_gwr_empty<-rolle_gwr_empty[!rolle_gwr_empty$iid%in%gwr_on_osm$iidgwr,]
 ## Gebäude Details
 ```{r explore, fig.height=15, fig.width=15, message=FALSE, warning=FALSE}
 #combine all build. data
-rolle_bld_gwr_out<-rolle_bld_gwr[,c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ","GANZWHG","GABBJ")]
-rolle_bld_gwr_mult_out<-rolle_bld_gwr_mult[,c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ","GANZWHG","GABBJ")]
-rolle_osm_gwr_out<-rolle_osm_gwr[,c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ","GANZWHG","GABBJ")]
+rolle_bld_gwr_out<-rolle_bld_gwr[,c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ","GANZWHG","GABBJ","GHEIZ","GENHZ","GENWW")]
+rolle_bld_gwr_mult_out<-rolle_bld_gwr_mult[,c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ","GANZWHG","GABBJ","GHEIZ","GENHZ","GENWW")]
+rolle_osm_gwr_out<-rolle_osm_gwr[,c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ","GANZWHG","GABBJ","GHEIZ","GENHZ","GENWW")]
 
 rolle_bld_gwr_out$source<-"AVs"
 rolle_bld_gwr_mult_out$source<-"AVm"
@@ -356,47 +357,79 @@ attrs<-left_join(rolle_bld_out@data, gwrCodes, by = c('GKLAS'='id'))
 attrs$fullText<-NULL
 names(attrs)[ncol(attrs)]<-"GKLAS_text"
 
+attrs$GHEIZ<-as.numeric(attrs$GHEIZ)
+attrs<-left_join(attrs, gwrCodes, by = c('GHEIZ'='id'))
+attrs$fullText<-NULL
+names(attrs)[ncol(attrs)]<-"GHEIZ_text"
+
+attrs$GENHZ<-as.numeric(attrs$GENHZ)
+attrs<-left_join(attrs, gwrCodes, by = c('GENHZ'='id'))
+attrs$fullText<-NULL
+names(attrs)[ncol(attrs)]<-"GENHZ_text"
+
+attrs$GENWW<-as.numeric(attrs$GENWW)
+attrs<-left_join(attrs, gwrCodes, by = c('GENWW'='id'))
+attrs$fullText<-NULL
+names(attrs)[ncol(attrs)]<-"GENWW_text"
+
 rolle_bld_out@data<-attrs
 
-p1<-ggplot(rolle_bld_out@data, aes(x=as.numeric(GAREA),fill=source))+
+p1<-ggplot(rolle_bld_out@data, aes(x=as.numeric(GAREA)))+
   geom_density(alpha=0.5)+
   theme_minimal()+
   ggtitle(paste("Gebaeudeflaeche / n noData = ",sum(is.na(rolle_bld_out@data$GAREA))," von n Geb. ",nrow(rolle_bld_out),sep=""))+
+  xlim(c(0,3000))+
   xlab("")
 
-p2<-ggplot(rolle_bld_out@data, aes(x=as.numeric(GBAUJ),fill=source))+
+p2<-ggplot(rolle_bld_out@data, aes(x=as.numeric(GBAUJ)))+
   geom_density(alpha=0.5)+
   theme_minimal()+
   ggtitle(paste("Baujahr / n noData = ",sum(is.na(rolle_bld_out@data$GBAUJ))," von n Geb. ",nrow(rolle_bld_out),sep=""))+
+  xlim(c(1600,2018))+
   xlab("")
 
-p3<-ggplot(rolle_bld_out@data, aes(x=as.numeric(GASTW),fill=source))+
+p3<-ggplot(rolle_bld_out@data, aes(x=as.numeric(GASTW)))+
   geom_density(alpha=0.5)+
   theme_minimal()+
   ggtitle(paste("Stockwerke / n noData = ",sum(is.na(rolle_bld_out@data$GASTW))," von n Geb. ",nrow(rolle_bld_out),sep=""))+
   xlab("")
 
-p4<-ggplot(rolle_bld_out@data, aes(x=as.numeric(GASTW),fill=source))+
-  geom_density(alpha=0.5)+
-  theme_minimal()+
-  ggtitle(paste("Stockwerke / n noData = ",sum(is.na(rolle_bld_out@data$GASTW))," von n Geb. ",nrow(rolle_bld_out),sep=""))+
-  xlab("")
-
-p5<-ggplot(rolle_bld_out@data, aes(x=as.numeric(GANZWHG),fill=source))+
+p4<-ggplot(rolle_bld_out@data, aes(x=as.numeric(GANZWHG)))+
   geom_density(alpha=0.5)+
   theme_minimal()+
   ggtitle(paste("Anzahl Wohnungen / n noData = ",sum(is.na(rolle_bld_out@data$GANZWHG))," von n Geb. ",nrow(rolle_bld_out),sep=""))+
   xlim(c(0,30))+
   xlab("")
 
-p6<-ggplot(rolle_bld_out@data, aes(x=GKLAS_text))+
+p5<-ggplot(rolle_bld_out@data, aes(x=GKLAS_text))+
   geom_bar()+
   theme_minimal()+
   ggtitle(paste("Gebaeudeklassen / n noData = ",sum(is.na(rolle_bld_out@data$GKLAS_text))," von n Geb. ",nrow(rolle_bld_out),sep=""))+
   theme(axis.text.x = element_text(angle = 45, hjust = 1,size=12))+
   xlab("")
 
-grid.arrange(p1,p2,p3,p4,p5,p6,ncol=2)
+p6<-ggplot(rolle_bld_out@data, aes(x=GHEIZ_text))+
+  geom_bar()+
+  theme_minimal()+
+  ggtitle(paste("Heiz / n noData = ",sum(is.na(rolle_bld_out@data$GHEIZ_text))," von n Geb. ",nrow(rolle_bld_out),sep=""))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size=12))+
+  xlab("")
+
+p7<-ggplot(rolle_bld_out@data, aes(x=GENHZ_text))+
+  geom_bar()+
+  theme_minimal()+
+  ggtitle(paste("Heiz / n noData = ",sum(is.na(rolle_bld_out@data$GENHZ_text))," von n Geb. ",nrow(rolle_bld_out),sep=""))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size=12))+
+  xlab("")
+
+p8<-ggplot(rolle_bld_out@data, aes(x=GENWW_text))+
+  geom_bar()+
+  theme_minimal()+
+  ggtitle(paste("Warm / n noData = ",sum(is.na(rolle_bld_out@data$GENWW_text))," von n Geb. ",nrow(rolle_bld_out),sep=""))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size=12))+
+  xlab("")
+
+grid.arrange(p1,p2,p3,p4,p5,p6,p7,p8,ncol=2)
 
 ```
 

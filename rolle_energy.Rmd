@@ -1,0 +1,47 @@
+---
+title: "Energiebedarfs-Abschätzung der Gebäude in Rolle & Mont-Sur-Rolle"
+author: "Curdin Derungs"
+date: "April 2018"
+output:
+  html_document:
+      toc: true
+      toc_float: true
+---
+
+```{r setup, include=FALSE}
+
+#loading libraries
+library(sp)
+
+#empty workspace
+rm(list=ls())
+
+#working directory
+#should be changed if working on Windows
+dataPath<-"/Volumes/data$/ta/60 FuE/6096 SCCER/609635 FEEBD-II/60963505 Work Packages/JA RED/06-Daten/"
+```
+
+
+## Gebäudedaten aus Preprocessing einlesen
+
+```{r readerGeb, warning=FALSE, paged.print=FALSE}
+load("Output/rolle_buildings_with_gwr.Rdata")
+```
+
+## Fehlende Werte von Nachbarn borgen
+
+```{r nachbarn, warning=FALSE, paged.print=FALSE}
+
+
+
+```
+
+## Funktion zur Abschätzung vom Energiebedarf von Gebäuden
+
+```{r energieFunk, warning=FALSE, paged.print=FALSE}
+
+energieBedarf<-function(alter,flaeche,){
+  
+}
+
+```
