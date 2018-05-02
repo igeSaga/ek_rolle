@@ -281,8 +281,8 @@ gwr_on_bld_mult_clean<-gwr_on_bld_multi[!duplicated(gwr_on_bld_multi$iidgwr), ]
 
 #all ok bld polygons
 rolle_bld_gwr<-rolle_build[rolle_build$iid%in%gwr_on_bld_ok_clean$iidbld,]
-rolle_bld_gwr@data<-merge(rolle_bld_gwr@data,gwr_on_bld_ok_clean,by.x="iid",by.y="iidbld")
-rolle_bld_gwr@data<-merge(rolle_bld_gwr@data,rolle_gwr@data,by.x="iidgwr",by.y="iid")
+rolle_bld_gwr@data<-left_join(rolle_bld_gwr@data, gwr_on_bld_ok_clean, by = c('iid'='iidbld'))
+rolle_bld_gwr@data<-left_join(rolle_bld_gwr@data, rolle_gwr@data, by = c('iidgwr'='iid'))
 
 #and those gwr that did not match with a building
 rolle_gwr_empty<-rolle_gwr[rolle_gwr$iid%in%gwr_empty,]
@@ -345,7 +345,7 @@ rolle_gwr_empty<-rolle_gwr_empty[!rolle_gwr_empty$iid%in%gwr_on_osm$iidgwr,]
 ```
 
 ## Gebäude Details
-```{r explore, fig.height=15, fig.width=15, message=FALSE, warning=FALSE}
+```{r explore, fig.height=15, fig.width=20, message=FALSE, warning=FALSE}
 #combine all build. data
 rolle_bld_gwr_out<-rolle_bld_gwr[,c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ","GANZWHG","GABBJ","GHEIZ","GENHZ","GENWW")]
 rolle_bld_gwr_mult_out<-rolle_bld_gwr_mult[,c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ","GANZWHG","GABBJ","GHEIZ","GENHZ","GENWW")]
@@ -357,8 +357,11 @@ rolle_osm_gwr_out$source<-"OSM"
 
 rolle_bld_out<-rbind(rolle_bld_gwr_out,rolle_bld_gwr_mult_out,rolle_osm_gwr_out)
 
-#add explicit attribute data
-gwrCodes<-read.csv("data/gwrCodes.csv")
+#add explicit attribute data...
+#but first solving some stange encoding problems (setting encoding in textwrangler to UTF-8 and then changing my settings and using explicit encoding while reading worked...)
+Sys.setlocale(category = "LC_ALL", locale = "en_US.UTF-8")
+gwrCodes<-read.csv("data/gwrCodes.csv",encoding="UTF-8")
+
 names(gwrCodes)[1]<-"id"
 rolle_bld_out$GKLAS<-as.numeric(rolle_bld_out$GKLAS)
 attrs<-left_join(rolle_bld_out@data, gwrCodes, by = c('GKLAS'='id'))
@@ -379,6 +382,11 @@ attrs$GENWW<-as.numeric(attrs$GENWW)
 attrs<-left_join(attrs, gwrCodes, by = c('GENWW'='id'))
 attrs$fullText<-NULL
 names(attrs)[ncol(attrs)]<-"GENWW_text"
+
+attrs$GKAT<-as.numeric(attrs$GKAT)
+attrs<-left_join(attrs, gwrCodes, by = c('GKAT'='id'))
+attrs$fullText<-NULL
+names(attrs)[ncol(attrs)]<-"GKAT_text"
 
 rolle_bld_out@data<-attrs
 
@@ -416,28 +424,35 @@ p5<-ggplot(rolle_bld_out@data, aes(x=GKLAS_text))+
   theme(axis.text.x = element_text(angle = 45, hjust = 1,size=12))+
   xlab("")
 
-p6<-ggplot(rolle_bld_out@data, aes(x=GHEIZ_text))+
+p6<-ggplot(rolle_bld_out@data, aes(x=GKAT_text))+
+  geom_bar()+
+  theme_minimal()+
+  ggtitle(paste("Gebaeudeklassen / n noData = ",sum(is.na(rolle_bld_out@data$GKAT_text))," von n Geb. ",nrow(rolle_bld_out),sep=""))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size=12))+
+  xlab("")
+
+p7<-ggplot(rolle_bld_out@data, aes(x=GHEIZ_text))+
   geom_bar()+
   theme_minimal()+
   ggtitle(paste("Heiz / n noData = ",sum(is.na(rolle_bld_out@data$GHEIZ_text))," von n Geb. ",nrow(rolle_bld_out),sep=""))+
   theme(axis.text.x = element_text(angle = 45, hjust = 1,size=12))+
   xlab("")
 
-p7<-ggplot(rolle_bld_out@data, aes(x=GENHZ_text))+
+p8<-ggplot(rolle_bld_out@data, aes(x=GENHZ_text))+
   geom_bar()+
   theme_minimal()+
   ggtitle(paste("Heiz / n noData = ",sum(is.na(rolle_bld_out@data$GENHZ_text))," von n Geb. ",nrow(rolle_bld_out),sep=""))+
   theme(axis.text.x = element_text(angle = 45, hjust = 1,size=12))+
   xlab("")
 
-p8<-ggplot(rolle_bld_out@data, aes(x=GENWW_text))+
+p9<-ggplot(rolle_bld_out@data, aes(x=GENWW_text))+
   geom_bar()+
   theme_minimal()+
   ggtitle(paste("Warm / n noData = ",sum(is.na(rolle_bld_out@data$GENWW_text))," von n Geb. ",nrow(rolle_bld_out),sep=""))+
   theme(axis.text.x = element_text(angle = 45, hjust = 1,size=12))+
   xlab("")
 
-p.all<-grid.arrange(p1,p2,p3,p4,p5,p6,p7,p8,ncol=2)
+p.all<-grid.arrange(p1,p2,p3,p4,p5,p6,p7,p8,p9,ncol=3)
 p.all
 ```
 
@@ -578,8 +593,10 @@ htmlwidgets::saveWidget(m, file=paste(wd,"/output/map/map.html",sep=""),selfcont
 
 #buildings speichern
 save(rolle_bld_out,file="output/geom/rolle_buildings_with_gwr.Rdata")
+writeOGR(rolle_bld_out, "output/geom", "rolle_bld_out", driver="ESRI Shapefile",overwrite_layer = T)
+
 
 #abbildungen speichern
-ggsave(p.all,filename = "output/viz/buildingPlots.png",dpi = 500,width = 18,height = 15)
+ggsave(p.all,filename = "output/viz/buildingPlots.png",dpi = 500,width = 22,height = 15)
 ```
 

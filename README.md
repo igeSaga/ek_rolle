@@ -8,6 +8,8 @@ The respository contains all R files, required for the computational part of the
 
 - rolle_buildings.RMD: The script covers all steps from reading in geometries of buildings, to the intersection of buildings with relevant metadata and, finally, the computation of a homogenized set of buildings that can be used in all follow up analysis. A map that shows the Result from this first processing step can be found [here](http://geo.uzh.ch/~cderungs/saga/map.html). Figures representing some basic charactersitics of buildings in Rolle are stored [here](https://github.com/igeSaga/ek_rolle/tree/master/output/viz). Finally, an online version of the R script is available [here](http://geo.uzh.ch/~cderungs/saga/rolle_buildings.html)
 
+- rolle_energy.RMD: The script translates area, number of levels and year of construction of buildings into energy-use.A map that shows the Result from this conversion can be found [here](http://geo.uzh.ch/~cderungs/saga/mapEnergy.html). An online version of the R script that produced these results is available [here](http://geo.uzh.ch/~cderungs/saga/rolle_energy.html)
+
 
 ## Authors
 
