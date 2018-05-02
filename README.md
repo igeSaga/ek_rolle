@@ -6,7 +6,7 @@ The goal of this project is to develope an energy concept for the two municipali
 
 The respository contains all R files, required for the computational part of the analysis. The following R markdown files are contained:
 
-- rolle_buildings.RMD: The script covers all steps from reading in geometries of buildings, to the intersection of buildings with relevant metadata and, finally, the computation of a homogenized set of buildings that can be used in all follow up analysis. A map that shows the Result from this first processing step can be found [here](http://geo.uzh.ch/~cderungs/saga/map.html).
+- rolle_buildings.RMD: The script covers all steps from reading in geometries of buildings, to the intersection of buildings with relevant metadata and, finally, the computation of a homogenized set of buildings that can be used in all follow up analysis. A map that shows the Result from this first processing step can be found [here](http://geo.uzh.ch/~cderungs/saga/map.html). Figures representing some basic charactersitics of buildings in Rolle are stored [here](https://github.com/igeSaga/ek_rolle/tree/master/output/viz). Finally, an online version of the R script is available [here](http://geo.uzh.ch/~cderungs/saga/rolle_buildings.html)
 
 
 ## Authors

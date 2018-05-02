@@ -74,7 +74,15 @@ rolle_gwr<-read.csv(paste(dataPath,"02_GWR/Rolle_GEB-02.csv",sep=""),sep = ";",e
 #only non-na's
 rolle_gwr<-rolle_gwr[!is.na(rolle_gwr$GKODX),]
 
+#no duplicates
+rolle_gwr<-rolle_gwr[!duplicated(rolle_gwr$EGID),]
+
+#unique, new id for internal use
 rolle_gwr$iid<-1:nrow(rolle_gwr)
+
+#change coordinates of two gwr points after visual analysis in qgis
+rolle_gwr[rolle_gwr$EGID==280080732,c("GKODX","GKODY")]<-c(2515260,1146491)
+rolle_gwr[rolle_gwr$EGID==280079954,c("GKODX","GKODY")]<-c(2515324,1146476)
 
 #transform gwr to spatial data
 coordinates(rolle_gwr)<-~GKODX+GKODY
@@ -83,7 +91,7 @@ proj4string(rolle_gwr)<-CRS("+init=epsg:2056")
 #reprojection
 rolle_gwr<-spTransform(rolle_gwr,CRSobj = CRS("+init=epsg:21781"))
 
-rolle_gwr<-rolle_gwr[is.na(rolle_gwr$GABBJ),]
+#rolle_gwr<-rolle_gwr[is.na(rolle_gwr$GABBJ),]
 
 #filter/rename attributes
 rolle_gwr<-rolle_gwr[,c("EGID","GSTAT","GKAT","GKLAS","GAREA","GASTW","GBAUJ","GANZWHG","GABBJ","GHEIZ","GENHZ","GENWW")]
@@ -429,8 +437,8 @@ p8<-ggplot(rolle_bld_out@data, aes(x=GENWW_text))+
   theme(axis.text.x = element_text(angle = 45, hjust = 1,size=12))+
   xlab("")
 
-grid.arrange(p1,p2,p3,p4,p5,p6,p7,p8,ncol=2)
-
+p.all<-grid.arrange(p1,p2,p3,p4,p5,p6,p7,p8,ncol=2)
+p.all
 ```
 
 
@@ -566,8 +574,12 @@ Hier die Speicherung...
 ```{r save}
 #html karte speichern
 wd<-getwd()
-htmlwidgets::saveWidget(m, file=paste(wd,"/Output/map.html",sep=""),selfcontained = T)
+htmlwidgets::saveWidget(m, file=paste(wd,"/output/map/map.html",sep=""),selfcontained = T)
 
-save(rolle_bld_out,file="Output/rolle_buildings_with_gwr.Rdata")
+#buildings speichern
+save(rolle_bld_out,file="output/geom/rolle_buildings_with_gwr.Rdata")
+
+#abbildungen speichern
+ggsave(p.all,filename = "output/viz/buildingPlots.png",dpi = 500,width = 18,height = 15)
 ```
 
