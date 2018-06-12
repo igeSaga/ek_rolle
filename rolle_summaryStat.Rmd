@@ -1,6 +1,6 @@
 ---
 title: "Statistische Auswertung der Energiedaten von Rolle"
-author: "Curdin Derungs"
+author: "Curdin Derungs, ..."
 date: "April 2018"
 output:
   html_document:
