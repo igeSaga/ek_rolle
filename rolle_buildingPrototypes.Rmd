@@ -1,0 +1,83 @@
+---
+title: "rolle_buildingPrototypes"
+author: "Curdin Derungs, ..."
+date: "June 2018"
+output:
+  html_document:
+      toc: true
+      toc_float: true
+---
+
+```{r setup, include=FALSE}
+#loading libraries
+
+#empty workspace
+rm(list=ls())
+```
+
+
+## Gebäudedaten mit Energieverbrauch laden
+
+```{r readerGeb, warning=FALSE, paged.print=FALSE}
+load("output/geom/rolle_buildings_with_energy.Rdata")
+Sys.setlocale(category = "LC_ALL", locale = "en_US.UTF-8")
+gwrCodes<-read.csv("data/gwrCodes.csv",encoding="UTF-8")
+```
+
+
+## Attribute zusammenlegen
+...
+
+```{r nachbarn, warning=FALSE, paged.print=FALSE}
+
+summary(rolle_bld_out$GKLAS)
+
+names(gwrCodes)[1]<-"id"
+rolle_bld_out$GKLAS<-as.numeric(rolle_bld_out$GKLAS)
+attrs<-left_join(rolle_bld_out@data[,c(1:12,25,26)], gwrCodes, by = c('GKLAS'='id'))
+attrs$fullText<-NULL
+names(attrs)[ncol(attrs)]<-"GKLAS_text"
+
+
+attrs$GHEIZ<-as.numeric(attrs$GHEIZ)
+attrs<-left_join(attrs, gwrCodes, by = c('GHEIZ'='id'))
+attrs$fullText<-NULL
+names(attrs)[ncol(attrs)]<-"GHEIZ_text"
+
+attrs$GENHZ<-as.numeric(attrs$GENHZ)
+attrs<-left_join(attrs, gwrCodes, by = c('GENHZ'='id'))
+attrs$fullText<-NULL
+names(attrs)[ncol(attrs)]<-"GENHZ_text"
+
+attrs$GENWW<-as.numeric(attrs$GENWW)
+attrs<-left_join(attrs, gwrCodes, by = c('GENWW'='id'))
+attrs$fullText<-NULL
+names(attrs)[ncol(attrs)]<-"GENWW_text"
+
+attrs$GKAT<-as.numeric(attrs$GKAT)
+attrs<-left_join(attrs, gwrCodes, by = c('GKAT'='id'))
+attrs$fullText<-NULL
+names(attrs)[ncol(attrs)]<-"GKAT_text"
+
+rolle_bld_out@data<-attrs
+
+```
+
+
+## Attribute zusammenlegen
+...
+
+```{r nachbarn, warning=FALSE, paged.print=FALSE}
+library(ggplot2)
+
+attrs$GBAUP<-cut(as.numeric(attrs$GBAUJ),breaks=c(0,1919,1945,1960,1970,1980,1985,1990,1995,2000,2005,2010,2015,2500))
+
+test<-as.data.frame.table(table(attrs$GBAUP,factor(attrs$GKAT_text)))
+# library(reshape2)
+# data_wide <- dcast(test, Var1 ~ Var2, value.var="Freq")
+
+ggplot(test)+
+  geom_bar(aes(x=Var1,y=Freq),stat="identity")+
+  facet_grid(Var2~.)+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1,size=12))
+```
