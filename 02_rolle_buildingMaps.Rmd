@@ -1,0 +1,82 @@
+---
+title: "Kartierung der Gebäude in Rolle"
+author: "Curdin Derungs"
+date: "July 2018"
+output:
+  html_document:
+      toc: true
+      toc_float: true
+---
+
+```{r setup, include=FALSE}
+
+#loading libraries
+library(sp)
+library(htmlTable)
+library(leaflet)
+library(rgdal)
+
+#empty workspace
+rm(list=ls())
+```
+
+
+## Gebäudedaten aus Preprocessing einlesen
+
+```{r readerGeb, warning=FALSE, paged.print=FALSE}
+load("output/geom/rolle_bld_out.Rdata")
+```
+
+##Visualisierung
+
+```{r geoviz, fig.width = 10, fig.height = 5.5}
+
+rolle_bld_out.wgs<-spTransform(rolle_bld_out,CRSobj = CRS("+init=epsg:4326"))
+
+qpal <- pal <- colorBin(
+  palette = "YlGnBu",
+  domain = log10(rolle_bld_out.wgs$energy_use),
+  bins=10
+)
+
+#visualisierung mit leaflet
+m <- leaflet() %>%
+    
+  addProviderTiles(providers$OpenStreetMap, group = "normal") %>%
+  addProviderTiles(providers$Stamen.TonerLite, group = "OSM (b/w)") %>%
+  addProviderTiles("Esri.WorldImagery", group = "ESRI") %>%
+  
+  addPolygons(data=rolle_bld_out.wgs,
+              stroke = TRUE,
+              fillOpacity = 0.8, 
+              color = ~qpal(log10(rolle_bld_out.wgs$energy_use)),
+              weight=1,
+              popup=apply(rolle_bld_out.wgs@data[,c("GKAT_text","area_polygon","GBAUJ","GASTW","GHEIZ_text")], 1,  function(row) htmlTable(row, header = c("kat.","fl.","jahr","stockw","heiz"),align = "left")),
+              #popup=paste(rolle_bld_out.wgs$EGID,rolle_bld_out.wgs$GKAT_text),
+              group = "Haeuser")%>%
+  
+  addLayersControl(
+    baseGroups = c("normal", "OSM (b/w)","ESRI"),
+    overlayGroups = c("Haeuser"),
+    options = layersControlOptions(collapsed = F)
+  )%>%
+  addLegend(pal = qpal, 
+            values =log10(rolle_bld_out.wgs$energy_use), 
+            opacity = 1,
+            title = "log10(kWh/a)")
+
+#leaflet karte ausführen
+m
+```
+
+##Save all Information
+```{r save}
+#html karte speichern
+wd<-getwd()
+htmlwidgets::saveWidget(m, file=paste(wd,"/output/map/mapEnergy.html",sep=""),selfcontained = T)
+
+#buildings speichern
+save(rolle_bld_out,file="output/geom/rolle_buildings_with_energy.Rdata")
+writeOGR(rolle_bld_out.wgs, "output/geom", "rolle_bld_out_energy.wgs", driver="ESRI Shapefile",overwrite_layer = T)
+```
+
