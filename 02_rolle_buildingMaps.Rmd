@@ -12,8 +12,9 @@ output:
 
 #loading libraries
 library(sp)
-library(htmlTable)
 library(leaflet)
+library(gridExtra)
+library(ggplot2)
 library(rgdal)
 
 #empty workspace
@@ -25,45 +26,112 @@ rm(list=ls())
 
 ```{r readerGeb, warning=FALSE, paged.print=FALSE}
 load("output/geom/rolle_bld_out.Rdata")
+rolle_bld_out$GAREA<-sapply(rolle_bld_out@polygons,function(x){x@area})
+rolle_bld_out$GBAUP<-cut(as.numeric(rolle_bld_out$GBAUJ),breaks=c(0,1919,1945,1960,1970,1980,1985,1990,1995,2000,2005,2010,2015,2500))
+test<-rolle_bld_out@data
 ```
 
-##Visualisierung
+#Diagramme mit Summary Statistic
 
-```{r geoviz, fig.width = 10, fig.height = 5.5}
+```{r siaTyp, fig.height=12, fig.width=20, warning=FALSE, paged.print=FALSE}
+p1<-ggplot(rolle_bld_out@data, aes(x=sia))+
+  geom_bar()+
+  theme_minimal()+
+  ggtitle(paste("SIA Gebaeudetypen (Anzahl)",sep=""))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size=14))+
+  xlab("")
 
+p2<-ggplot(rolle_bld_out@data, aes(x=sia,y=GAREA))+
+  geom_bar(stat = "identity")+
+  theme_minimal()+
+  ggtitle(paste("SIA Gebaeudetypen (Flaechensumme)",sep=""))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size=14))+
+  xlab("")
+
+p.all<-grid.arrange(p1,p2,ncol=1)
+p.all
+```
+
+SIA Gebäudetypen pro Alterklasse
+
+```{r siaAlter, fig.height=25, fig.width=20, warning=FALSE, paged.print=FALSE}
+p1<-ggplot(rolle_bld_out@data, aes(x=sia))+
+  geom_bar()+
+  facet_wrap(facets = "GBAUP",ncol = 2)+
+  theme_bw()+
+  ggtitle(paste("SIA Gebaeudetypen (Anzahl)",sep=""))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size=14))+
+  xlab("")
+
+p2<-ggplot(rolle_bld_out@data, aes(x=sia,y=GAREA))+
+  geom_bar(stat = "identity")+
+  facet_wrap(facets = "GBAUP",ncol = 2)+
+  theme_bw()+
+  ggtitle(paste("SIA Gebaeudetypen (Flaechensumme)",sep=""))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size=14))+
+  xlab("")
+
+p.all2<-grid.arrange(p1,p2,ncol=1)
+p.all2
+```
+
+
+##Karte mit SIA Gebäudetypen
+
+```{r geoviz, fig.width = 8, fig.height = 5.5}
+#erst alle daten in wgs projezieren fuer leaflet projektion
 rolle_bld_out.wgs<-spTransform(rolle_bld_out,CRSobj = CRS("+init=epsg:4326"))
 
-qpal <- pal <- colorBin(
-  palette = "YlGnBu",
-  domain = log10(rolle_bld_out.wgs$energy_use),
-  bins=10
-)
+pal_sia <- colorFactor(palette="Set3", rolle_bld_out.wgs$sia)
+pal_heiz <- colorFactor(palette="Set1", factor(rolle_bld_out.wgs$GHEIZ_text))
+pal_energ <- colorFactor(palette="Set1", factor(rolle_bld_out.wgs$GENHZ_text))
 
 #visualisierung mit leaflet
 m <- leaflet() %>%
-    
-  addProviderTiles(providers$OpenStreetMap, group = "normal") %>%
+  
   addProviderTiles(providers$Stamen.TonerLite, group = "OSM (b/w)") %>%
+  addProviderTiles(providers$OpenStreetMap, group = "OSM") %>%
   addProviderTiles("Esri.WorldImagery", group = "ESRI") %>%
   
   addPolygons(data=rolle_bld_out.wgs,
               stroke = TRUE,
-              fillOpacity = 0.8, 
-              color = ~qpal(log10(rolle_bld_out.wgs$energy_use)),
+              fillOpacity = 1, 
+              color = ~pal_sia(rolle_bld_out.wgs$sia),
+              opacity = 1,
               weight=1,
-              popup=apply(rolle_bld_out.wgs@data[,c("GKAT_text","area_polygon","GBAUJ","GASTW","GHEIZ_text")], 1,  function(row) htmlTable(row, header = c("kat.","fl.","jahr","stockw","heiz"),align = "left")),
-              #popup=paste(rolle_bld_out.wgs$EGID,rolle_bld_out.wgs$GKAT_text),
-              group = "Haeuser")%>%
+              fillColor = ~pal_sia(rolle_bld_out.wgs$sia),
+              popup=rolle_bld_out.wgs$sia,
+              group = "SIA Typen")%>%
+    
+  addPolygons(data=rolle_bld_out.wgs,
+              stroke = TRUE,
+              fillOpacity = 1, 
+              color = ~pal_heiz(rolle_bld_out.wgs$GHEIZ_text),
+              opacity = 1,
+              weight=1,
+              fillColor = ~pal_heiz(rolle_bld_out.wgs$GHEIZ_text),
+              popup=rolle_bld_out.wgs$GHEIZ_text,
+              group = "Heizung")%>%
+  
+    addPolygons(data=rolle_bld_out.wgs,
+              stroke = TRUE,
+              fillOpacity = 1, 
+              color = ~pal_energ(rolle_bld_out.wgs$GENHZ_text),
+              opacity = 1,
+              weight=1,
+              fillColor = ~pal_energ(rolle_bld_out.wgs$GENHZ_text),
+              popup=rolle_bld_out.wgs$GENHZ_text,
+              group = "Energie")%>%
   
   addLayersControl(
-    baseGroups = c("normal", "OSM (b/w)","ESRI"),
-    overlayGroups = c("Haeuser"),
+    baseGroups = c("OSM (b/w)", "OSM","ESRI"),
+    overlayGroups = c("SIA Typen","Heizung","Energie"),
     options = layersControlOptions(collapsed = F)
   )%>%
-  addLegend(pal = qpal, 
-            values =log10(rolle_bld_out.wgs$energy_use), 
-            opacity = 1,
-            title = "log10(kWh/a)")
+  hideGroup(c("Heizung","Energie"))%>%
+  addLegend(pal = pal_sia, values = rolle_bld_out.wgs$sia, opacity = 1,position = "bottomright")%>%
+  addLegend(pal = pal_heiz, values = rolle_bld_out.wgs$GHEIZ_text, opacity = 1,position = "bottomleft")%>%
+  addLegend(pal = pal_energ, values = rolle_bld_out.wgs$GENHZ_text, opacity = 1,position = "bottomleft")
 
 #leaflet karte ausführen
 m
@@ -73,10 +141,9 @@ m
 ```{r save}
 #html karte speichern
 wd<-getwd()
-htmlwidgets::saveWidget(m, file=paste(wd,"/output/map/mapEnergy.html",sep=""),selfcontained = T)
+htmlwidgets::saveWidget(m, file=paste(wd,"/output/map/mapSia.html",sep=""),selfcontained = T)
 
-#buildings speichern
-save(rolle_bld_out,file="output/geom/rolle_buildings_with_energy.Rdata")
-writeOGR(rolle_bld_out.wgs, "output/geom", "rolle_bld_out_energy.wgs", driver="ESRI Shapefile",overwrite_layer = T)
+ggsave(p.all,filename = "output/viz/buildingPlotSia.png",dpi = 500,width = 22,height = 15)
+ggsave(p.all2,filename = "output/viz/buildingPlotSia_age.png",dpi = 500,width = 22,height = 25)
 ```
 

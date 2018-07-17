@@ -215,7 +215,7 @@ Nun werden die AV Daten mit den GWR Daten verschnitten. Es handelt sich dabei um
    
 Hier wird folgendermassen vorgegangen:
 * In einem ersten Schritt werden die Gebäude extrahiert, welche genau eine Verschneidung von GWR Punkt und AV Polygon haben.
-* Für die Fälle von "mehreren AV zu einem GWR"" oder "mehreren GWR zu einem AV"" wird jeweils die Kombination ausgewählt, welche übereinstimmende Angaben in Bezug auf die Gebäudefläche enthält (oder die übereinstimmensten, falls keine genaue Übereinstimmung besteht).
+* Für die Fälle von "mehreren AV zu einem GWR"" oder "mehreren GWR zu einem AV"" wird jeweils die Kombination ausgewählt, welche übereinstimmende Angaben in Bezug auf die Gebäudefläche enthält (oder die übereinstimmensten, falls keine genaue Übereinstimmung besteht).  
 * Übrig bleiben die AV Gebäude ohne GWR Pendant und die GWR Punkte, welche keinem AV Gebäude zugeordnet werden konnten.
 ```{r intersectionAV}
 #intersecting data
@@ -365,7 +365,10 @@ rolle_gwr_empty<-rolle_gwr_empty[!rolle_gwr_empty$iid%in%gwr_on_osm$iidgwr,]
 
 ##Gebäude Details und manuelle Änderungen
 Die Codes aus den GWR Daten werden mit den zugehörigen ausformulierten Attributbeschreibungen ergänzt. Zusätzlich werden ein paar manuelle Änderungen hinzugefügt:  
-* das Migros Gebäude ist unterdessen neu gebaut worden (Kombination aus Wohnen und Einkaufen). Die neuen Geometrien mit den entsprechenden Informationen wurden separat im GIS erfasst und werden hier hinzugefügt.
+* das Migros Gebäude ist unterdessen neu gebaut worden (Kombination aus Wohnen und Einkaufen). Die neuen Geometrien mit den entsprechenden Informationen wurden separat im GIS erfasst und werden hier hinzugefügt.  
+* ein grosses Gebäude ist teilweise Restaurant und teilweise Industrie. Die beiden Nutzungen werden unterschieden.  
+* das Schloss wird manuell hinzugefügt.
+* alle AV Gebäude mit einer Fläche >150m2, welche nicht in GWR abgebildet sind werden hinzugenommen.  
 
 ```{r explore, message=FALSE, warning=FALSE}
 #combine all build. data
@@ -379,6 +382,7 @@ rolle_osm_gwr_out$source<-"OSM"
 
 rolle_bld_out<-rbind(rolle_bld_gwr_out,rolle_bld_gwr_mult_out,rolle_osm_gwr_out)
 
+##spezielle gebäude
 #loading migros building
 rolle_migros<-readOGR("data/geom", "rolle_migros_wgs")
 rolle_migros<-spTransform(rolle_migros,CRSobj = CRS("+init=epsg:21781"))
@@ -387,6 +391,33 @@ rolle_migros$source<-"manual"
 
 rolle_bld_out<-rolle_bld_out[rolle_bld_out$EGID!=280079171,]
 rolle_bld_out<-rbind(rolle_bld_out,rolle_migros)
+
+#loading restaurant building
+rolle_resti<-readOGR("data/geom", "rolle_resti01_wgs")
+rolle_resti<-spTransform(rolle_resti,CRSobj = CRS("+init=epsg:21781"))
+rolle_resti<-rolle_resti[,1:13]
+rolle_resti$source<-"manual"
+
+rolle_bld_out<-rolle_bld_out[rolle_bld_out$EGID!=280062591,]
+rolle_bld_out<-rbind(rolle_bld_out,rolle_resti)
+
+#loading restaurant building
+rolle_schloss<-readOGR("data/geom", "rolle_schloss_wgs")
+rolle_schloss<-spTransform(rolle_schloss,CRSobj = CRS("+init=epsg:21781"))
+rolle_schloss@data<-rolle_bld_out@data[1,]
+rolle_schloss@data[1,]<-c("9999999",rep(NA,3),round(rolle_schloss@polygons[[1]]@area,0),rep(NA,8))
+rolle_schloss$source<-"manual"
+rolle_bld_out<-rbind(rolle_bld_out,rolle_schloss)
+
+#adding AV (!=GWR)
+rolle_av_temp<-rolle_build_av_excl[rolle_build_av_excl$SHAPE_AREA>150,]
+rolle_av<-rolle_av_temp
+rolle_av@data<-rolle_bld_out@data[1:nrow(rolle_av),]
+for(i in 1:nrow(rolle_av)){
+  rolle_av@data[i,]<-c(paste("9999_ID",as.character(rolle_av_temp$ID[i]),sep=""),rep(NA,3),round(rolle_av@polygons[[i]]@area,0),rep(NA,8))
+}
+rolle_av$source<-"AVextra"
+rolle_bld_out<-rbind(rolle_bld_out,rolle_av)
 
 #add explicit attribute data...
 #but first solving some stange encoding problems (setting encoding in textwrangler to UTF-8 and then changing my settings and using explicit encoding while reading worked...)
@@ -426,63 +457,63 @@ rolle_bld_out@data<-attrs
 Viele Gebäude haben keine Information zum Heizungstyp oder zum Energieträger. Eine visuelle Analyse hat ergeben, dass häufig die Information von Nachbargebäuden "ausgeliehen" werden kann und damit in den häufigsten Fällen kein grosser Fehler entsteht. Information wird nur geborgt, falls das nächste Nachbarsgebäude mit relevanter Information nicht weiter als 100m entfernt liegt. Damit soll die Siedlungsstuktur möglichst erhalten bleiben. In einem separaten Attribut wird gespeichert, ob die Information geborgt wurde oder bereits im GWR vorhanden war.
 
 ```{r nachbarn, warning=FALSE, paged.print=FALSE}
-#many attributes have missing values
-#these will all seperatly borrow attributes from their nearest neighbour
-#an attribute "borrowed" indicates where this has happened
-rolle_bld_out$GKLAS_borrowed<-is.na(rolle_bld_out$GKLAS)
-rolle_bld_out$GHEIZ_borrowed<-is.na(rolle_bld_out$GHEIZ)
-rolle_bld_out$GENHZ_borrowed<-is.na(rolle_bld_out$GENHZ)
-rolle_bld_out$GENWW_borrowed<-is.na(rolle_bld_out$GENWW)
-rolle_bld_out$GBAUJ_borrowed<-is.na(rolle_bld_out$GBAUJ)
-rolle_bld_out$GASTW_borrowed<-is.na(rolle_bld_out$GASTW)
-
-#introducing a function that can retrieve attribute for na's from nearest neighbours that have info
-#the function requires two spdf's (one with na's and one with a's) that only contain the one attribute of interest
-getAttrFromNearNeigh<-function(spdf.na, spdf.a){
-  #compte a distance matrix na*a
-  dists<-spDists(spdf.na,spdf.a,longlat = F)
-
-  #get index of nearest a to each na
-  min.ind<-apply(dists,1,which.min)
-
-  #only borrow information from neighbours within distance 100m
-  min.ind[diag(dists[,min.ind])>100]<-NA
-
-  #get the info from the nearest neighs
-  info.borrowed<-spdf.a@data[min.ind,1]
-
-  return(info.borrowed)
-}
-
-##GKLAS
-#split na from a
-#and only retain attribute of interest
-spdf.na<-rolle_bld_out[is.na(rolle_bld_out$GKLAS_text),"GKLAS_text"]
-spdf.a<-rolle_bld_out[!is.na(rolle_bld_out$GKLAS_text),"GKLAS_text"]
-
-#use function
-rolle_bld_out$GKLAS_text[is.na(rolle_bld_out$GKLAS_text)]<-getAttrFromNearNeigh(spdf.na,spdf.a)
-
-#do it for all other four attributes (w/o too many comments)
-spdf.na<-rolle_bld_out[is.na(rolle_bld_out$GHEIZ_text),"GHEIZ_text"]
-spdf.a<-rolle_bld_out[!is.na(rolle_bld_out$GHEIZ_text),"GHEIZ_text"]
-rolle_bld_out$GHEIZ_text[is.na(rolle_bld_out$GHEIZ_text)]<-getAttrFromNearNeigh(spdf.na,spdf.a)
-
-spdf.na<-rolle_bld_out[is.na(rolle_bld_out$GENHZ_text),"GENHZ_text"]
-spdf.a<-rolle_bld_out[!is.na(rolle_bld_out$GENHZ_text),"GENHZ_text"]
-rolle_bld_out$GENHZ_text[is.na(rolle_bld_out$GENHZ_text)]<-getAttrFromNearNeigh(spdf.na,spdf.a)
-
-spdf.na<-rolle_bld_out[is.na(rolle_bld_out$GENWW_text),"GENWW_text"]
-spdf.a<-rolle_bld_out[!is.na(rolle_bld_out$GENWW_text),"GENWW_text"]
-rolle_bld_out$GENWW_text[is.na(rolle_bld_out$GENWW_text)]<-getAttrFromNearNeigh(spdf.na,spdf.a)
-
-spdf.na<-rolle_bld_out[is.na(rolle_bld_out$GBAUJ),"GBAUJ"]
-spdf.a<-rolle_bld_out[!is.na(rolle_bld_out$GBAUJ),"GBAUJ"]
-rolle_bld_out$GBAUJ[is.na(rolle_bld_out$GBAUJ)]<-getAttrFromNearNeigh(spdf.na,spdf.a)
-
-spdf.na<-rolle_bld_out[is.na(rolle_bld_out$GASTW),"GASTW"]
-spdf.a<-rolle_bld_out[!is.na(rolle_bld_out$GASTW),"GASTW"]
-rolle_bld_out$GASTW[is.na(rolle_bld_out$GASTW)]<-getAttrFromNearNeigh(spdf.na,spdf.a)
+# #many attributes have missing values
+# #these will all seperatly borrow attributes from their nearest neighbour
+# #an attribute "borrowed" indicates where this has happened
+# rolle_bld_out$GKLAS_borrowed<-is.na(rolle_bld_out$GKLAS)
+# rolle_bld_out$GHEIZ_borrowed<-is.na(rolle_bld_out$GHEIZ)
+# rolle_bld_out$GENHZ_borrowed<-is.na(rolle_bld_out$GENHZ)
+# rolle_bld_out$GENWW_borrowed<-is.na(rolle_bld_out$GENWW)
+# rolle_bld_out$GBAUJ_borrowed<-is.na(rolle_bld_out$GBAUJ)
+# rolle_bld_out$GASTW_borrowed<-is.na(rolle_bld_out$GASTW)
+# 
+# #introducing a function that can retrieve attribute for na's from nearest neighbours that have info
+# #the function requires two spdf's (one with na's and one with a's) that only contain the one attribute of interest
+# getAttrFromNearNeigh<-function(spdf.na, spdf.a){
+#   #compte a distance matrix na*a
+#   dists<-spDists(spdf.na,spdf.a,longlat = F)
+# 
+#   #get index of nearest a to each na
+#   min.ind<-apply(dists,1,which.min)
+# 
+#   #only borrow information from neighbours within distance 100m
+#   min.ind[diag(dists[,min.ind])>100]<-NA
+# 
+#   #get the info from the nearest neighs
+#   info.borrowed<-spdf.a@data[min.ind,1]
+# 
+#   return(info.borrowed)
+# }
+# 
+# ##GKLAS
+# #split na from a
+# #and only retain attribute of interest
+# spdf.na<-rolle_bld_out[is.na(rolle_bld_out$GKLAS_text),"GKLAS_text"]
+# spdf.a<-rolle_bld_out[!is.na(rolle_bld_out$GKLAS_text),"GKLAS_text"]
+# 
+# #use function
+# rolle_bld_out$GKLAS_text[is.na(rolle_bld_out$GKLAS_text)]<-getAttrFromNearNeigh(spdf.na,spdf.a)
+# 
+# #do it for all other four attributes (w/o too many comments)
+# spdf.na<-rolle_bld_out[is.na(rolle_bld_out$GHEIZ_text),"GHEIZ_text"]
+# spdf.a<-rolle_bld_out[!is.na(rolle_bld_out$GHEIZ_text),"GHEIZ_text"]
+# rolle_bld_out$GHEIZ_text[is.na(rolle_bld_out$GHEIZ_text)]<-getAttrFromNearNeigh(spdf.na,spdf.a)
+# 
+# spdf.na<-rolle_bld_out[is.na(rolle_bld_out$GENHZ_text),"GENHZ_text"]
+# spdf.a<-rolle_bld_out[!is.na(rolle_bld_out$GENHZ_text),"GENHZ_text"]
+# rolle_bld_out$GENHZ_text[is.na(rolle_bld_out$GENHZ_text)]<-getAttrFromNearNeigh(spdf.na,spdf.a)
+# 
+# spdf.na<-rolle_bld_out[is.na(rolle_bld_out$GENWW_text),"GENWW_text"]
+# spdf.a<-rolle_bld_out[!is.na(rolle_bld_out$GENWW_text),"GENWW_text"]
+# rolle_bld_out$GENWW_text[is.na(rolle_bld_out$GENWW_text)]<-getAttrFromNearNeigh(spdf.na,spdf.a)
+# 
+# spdf.na<-rolle_bld_out[is.na(rolle_bld_out$GBAUJ),"GBAUJ"]
+# spdf.a<-rolle_bld_out[!is.na(rolle_bld_out$GBAUJ),"GBAUJ"]
+# rolle_bld_out$GBAUJ[is.na(rolle_bld_out$GBAUJ)]<-getAttrFromNearNeigh(spdf.na,spdf.a)
+# 
+# spdf.na<-rolle_bld_out[is.na(rolle_bld_out$GASTW),"GASTW"]
+# spdf.a<-rolle_bld_out[!is.na(rolle_bld_out$GASTW),"GASTW"]
+# rolle_bld_out$GASTW[is.na(rolle_bld_out$GASTW)]<-getAttrFromNearNeigh(spdf.na,spdf.a)
 ```
 
 ##SIA Klassifikation
@@ -495,6 +526,11 @@ rolle_bld_out_sia<-rolle_bld_out
 rolle_bld_out_sia<-rolle_bld_out_sia[-c(1:nrow(rolle_bld_out_sia)),]
 
 ##wichtige spezialfälle
+#schloss
+rolle_bld_out_temp<-rolle_bld_out_noSia[rolle_bld_out_noSia$EGID == "9999999",] 
+rolle_bld_out_temp$sia <- "schloss"
+rolle_bld_out_sia<-rbind(rolle_bld_out_sia,rolle_bld_out_temp)
+rolle_bld_out_noSia<-rolle_bld_out_noSia[rolle_bld_out_noSia$EGID != "9999999",]
 #migros
 rolle_bld_out_temp<-rolle_bld_out_noSia[rolle_bld_out_noSia$EGID == "280079171_1",] 
 rolle_bld_out_temp$sia <- "verkauf"
@@ -534,7 +570,39 @@ rolle_bld_out_temp<-rolle_bld_out_noSia[rolle_bld_out_noSia$EGID == "829900",]
 rolle_bld_out_temp$sia<- "krankenhaus"
 rolle_bld_out_sia<-rbind(rolle_bld_out_sia,rolle_bld_out_temp)
 rolle_bld_out_noSia<-rolle_bld_out_noSia[rolle_bld_out_noSia$EGID != "829900",]
+#resti
+rolle_bld_out_temp<-rolle_bld_out_noSia[rolle_bld_out_noSia$EGID == "829427"|
+                                          rolle_bld_out_noSia$EGID == "829580"|
+                                          rolle_bld_out_noSia$EGID == "829423"|
+                                          rolle_bld_out_noSia$EGID == "190098292"|
+                                          rolle_bld_out_noSia$EGID == "829524"|
+                                          rolle_bld_out_noSia$EGID == "280062591_1"|
+                                          rolle_bld_out_noSia$EGID == "829697"|
+                                          rolle_bld_out_noSia$EGID == "829825",] 
+rolle_bld_out_temp$sia<- "restaurant"
+rolle_bld_out_sia<-rbind(rolle_bld_out_sia,rolle_bld_out_temp)
+rolle_bld_out_noSia<-rolle_bld_out_noSia[rolle_bld_out_noSia$EGID != "829427"&
+                                          rolle_bld_out_noSia$EGID != "829580"&
+                                          rolle_bld_out_noSia$EGID != "829423"&
+                                          rolle_bld_out_noSia$EGID != "190098292"&
+                                          rolle_bld_out_noSia$EGID != "829524"&
+                                          rolle_bld_out_noSia$EGID != "280062591_1"&
+                                          rolle_bld_out_noSia$EGID != "829697"&
+                                          rolle_bld_out_noSia$EGID != "829825",]
 
+#AV nicht in GWR
+rolle_bld_out_temp<-rolle_bld_out_noSia[rolle_bld_out_noSia$source == "AVextra",]
+rolle_bld_out_temp$sia <- "garage"
+rolle_bld_out_temp$sia[rolle_bld_out_temp$EGID=="9999_ID87678053"] <-"verwaltung"
+rolle_bld_out_temp$sia[rolle_bld_out_temp$EGID=="9999_ID9585245"] <-"kirche"
+rolle_bld_out_temp$sia[rolle_bld_out_temp$EGID=="9999_ID9585124"|
+                         rolle_bld_out_temp$EGID=="9999_ID9582178"|
+                         rolle_bld_out_temp$EGID=="9999_ID9584587"|
+                         rolle_bld_out_temp$EGID=="9999_ID9582623"|
+                         rolle_bld_out_temp$EGID=="9999_ID26876653"|
+                         rolle_bld_out_temp$EGID=="9999_ID61111124"] <-"leichte industrie"
+rolle_bld_out_sia<-rbind(rolle_bld_out_sia,rolle_bld_out_temp)
+rolle_bld_out_noSia<-rolle_bld_out_noSia[rolle_bld_out_noSia$source != "AVextra",]
 
 ##efh
 rolle_bld_out_temp<-rolle_bld_out_noSia[rolle_bld_out_noSia$klasKat == "1110_1021" | 
@@ -596,15 +664,11 @@ rolle_bld_out_noSia<-rolle_bld_out_noSia[rolle_bld_out_noSia$klasKat != "1220_10
 
 ##industrie
 rolle_bld_out_temp<-rolle_bld_out_noSia[rolle_bld_out_noSia$klasKat == "1251_1060" | 
-                    rolle_bld_out_noSia$klasKat == "1251_1040"| 
-                    rolle_bld_out_noSia$klasKat == "1241_1060"| 
-                    rolle_bld_out_noSia$klasKat == "1241_1040",] 
+                    rolle_bld_out_noSia$klasKat == "1251_1040",] 
 rolle_bld_out_temp$sia<- "industrie"
 rolle_bld_out_sia<-rbind(rolle_bld_out_sia,rolle_bld_out_temp)
 rolle_bld_out_noSia<-rolle_bld_out_noSia[rolle_bld_out_noSia$klasKat != "1251_1060"& 
-                    rolle_bld_out_noSia$klasKat != "1251_1040"| 
-                    rolle_bld_out_noSia$klasKat == "1241_1060"| 
-                    rolle_bld_out_noSia$klasKat == "1241_1040",]
+                    rolle_bld_out_noSia$klasKat != "1251_1040",]
 
 ##sporthalle
 rolle_bld_out_temp<-rolle_bld_out_noSia[rolle_bld_out_noSia$klasKat == "1265_1060" | 
@@ -617,12 +681,16 @@ rolle_bld_out_noSia<-rolle_bld_out_noSia[rolle_bld_out_noSia$klasKat != "1265_10
 ##versammlungslokal
 rolle_bld_out_temp<-rolle_bld_out_noSia[rolle_bld_out_noSia$klasKat == "1272_1040" | 
                     rolle_bld_out_noSia$klasKat == "1261_1060"| 
-                    rolle_bld_out_noSia$klasKat == "1274_1060",] 
+                    rolle_bld_out_noSia$klasKat == "1274_1060"| 
+                    rolle_bld_out_noSia$klasKat == "1241_1060"| 
+                    rolle_bld_out_noSia$klasKat == "1241_1040",] 
 rolle_bld_out_temp$sia<- "versammlungslokal"
 rolle_bld_out_sia<-rbind(rolle_bld_out_sia,rolle_bld_out_temp)
 rolle_bld_out_noSia<-rolle_bld_out_noSia[rolle_bld_out_noSia$klasKat != "1272_1040"& 
                     rolle_bld_out_noSia$klasKat != "1261_1060"& 
-                    rolle_bld_out_noSia$klasKat != "1274_1060",]
+                    rolle_bld_out_noSia$klasKat != "1274_1060"& 
+                    rolle_bld_out_noSia$klasKat != "1241_1060"& 
+                    rolle_bld_out_noSia$klasKat != "1241_1040",]
 
 ##hotel
 rolle_bld_out_temp<-rolle_bld_out_noSia[rolle_bld_out_noSia$klasKat == "1211_1040",] 
@@ -662,7 +730,7 @@ rolle_bld_out_temp<-rolle_bld_out_noSia[rolle_bld_out_noSia$klasKat == "NA_1060"
                        rolle_bld_out_noSia$klasKat == "NA_1040",]
 #circularity ist 1 bei kreisen und klein wenn umfang und fläche 
 rolle_bld_out_temp$circularity<-(4*3.14*as.numeric(rolle_bld_out_temp$GAREA))/(polyPerimeter(rolle_bld_out_temp))^2
-rolle_bld_out_temp<-rolle_bld_out_temp[rolle_bld_out_temp$circularity<0.6,]
+rolle_bld_out_temp<-rolle_bld_out_temp[rolle_bld_out_temp$circularity<0.7,]
 rolle_bld_out_temp$circularity<-NULL
 rolle_bld_out_temp$sia<- "garage"
 rolle_bld_out_sia<-rbind(rolle_bld_out_sia,rolle_bld_out_temp)
@@ -757,6 +825,7 @@ Es bleibt nur noch, die Gebäude in einer Karte darzustellen und anschliessend a
 #erst alle daten in wgs projezieren fuer leaflet projektion
 rolle_bound.wgs<-spTransform(rolle_bound,CRSobj = CRS("+init=epsg:4326"))
 rolle_build.wgs<-spTransform(rolle_build,CRSobj = CRS("+init=epsg:4326"))
+rolle_av.wgs<-spTransform(rolle_av,CRSobj = CRS("+init=epsg:4326"))
 
 rolle_bld_out.wgs<-spTransform(rolle_bld_out,CRSobj = CRS("+init=epsg:4326"))
 rolle_bld_out_noSia.wgs<-spTransform(rolle_bld_out_noSia,CRSobj = CRS("+init=epsg:4326"))
@@ -800,20 +869,21 @@ m <- leaflet() %>%
               fillColor = "orange",
               group = "Haeuser (OSM, kein match)")%>%
   
-    addPolygons(data=rolle_build_av_excl.wgs,
+    addPolygons(data=rolle_av.wgs,
               stroke = TRUE,
               fillOpacity = 0.4, 
               color = "yellow",
               opacity = 1,
               weight=1,
               fillColor = "yellow",
+              popup=rolle_av$EGID,
               group = "Haeuser (AV, kein match)")%>%
   
     addCircles(data=rolle_gwr.wgs,
               color = "grey",
               radius=5,
               group = "GWR (Alle)",
-             popup = as.character( rolle_gwr.wgs$iid))%>%
+             popup = as.character(rolle_gwr.wgs$iid))%>%
   
   addPolygons(data=rolle_bld_out.wgs,
               stroke = TRUE,
@@ -869,9 +939,14 @@ wd<-getwd()
 htmlwidgets::saveWidget(m, file=paste(wd,"/output/map/map.html",sep=""),selfcontained = T)
 
 #buildings speichern
-save(rolle_bld_out,file="output/geom/rolle_buildings_with_gwr.Rdata")
+save(rolle_bld_out,file="output/geom/rolle_bld_out.Rdata")
+save(rolle_bld_out_noSia,file="output/geom/rolle_bld_out_noSia.Rdata")
+save(rolle_build_av_excl,file="output/geom/rolle_bld_av_notGwr.Rdata")
+
 writeOGR(rolle_bld_out, "output/geom", "rolle_bld_out", driver="ESRI Shapefile",overwrite_layer = T)
-writeOGR(rolle_bld_out.wgs, "output/geom", "rolle_bld_out.wgs", driver="ESRI Shapefile",overwrite_layer = T)
+writeOGR(rolle_bld_out.wgs, "output/geom", "rolle_bld_out_wgs", driver="ESRI Shapefile",overwrite_layer = T)
+writeOGR(rolle_bld_out_noSia.wgs, "output/geom", "rolle_bld_out_noSia_wgs", driver="ESRI Shapefile",overwrite_layer = T)
+writeOGR(rolle_build_av_excl.wgs, "output/geom", "rolle_bld_av_notGwr_wgs", driver="ESRI Shapefile",overwrite_layer = T)
 
 #abbildungen speichern
 ggsave(p.all,filename = "output/viz/buildingPlots.png",dpi = 500,width = 22,height = 15)
