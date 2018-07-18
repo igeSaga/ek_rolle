@@ -26,8 +26,16 @@ rm(list=ls())
 
 ```{r readerGeb, warning=FALSE, paged.print=FALSE}
 load("output/geom/rolle_bld_out.Rdata")
+
+#revising area
 rolle_bld_out$GAREA<-sapply(rolle_bld_out@polygons,function(x){x@area})
+
+#classifying age
 rolle_bld_out$GBAUP<-cut(as.numeric(rolle_bld_out$GBAUJ),breaks=c(0,1919,1945,1960,1970,1980,1985,1990,1995,2000,2005,2010,2015,2500))
+
+#calculating ebf
+rolle_bld_out$ebf<-as.numeric(rolle_bld_out$GAREA)*as.numeric(rolle_bld_out$GASTW)
+  
 test<-rolle_bld_out@data
 ```
 
@@ -48,7 +56,14 @@ p2<-ggplot(rolle_bld_out@data, aes(x=sia,y=GAREA))+
   theme(axis.text.x = element_text(angle = 45, hjust = 1,size=14))+
   xlab("")
 
-p.all<-grid.arrange(p1,p2,ncol=1)
+p3<-ggplot(rolle_bld_out@data, aes(x=sia,y=ebf))+
+  geom_bar(stat = "identity")+
+  theme_minimal()+
+  ggtitle(paste("SIA Gebaeudetypen (EBF Summe)",sep=""))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size=14))+
+  xlab("")
+
+p.all<-grid.arrange(p1,p2,p3,ncol=1)
 p.all
 ```
 
@@ -71,14 +86,22 @@ p2<-ggplot(rolle_bld_out@data, aes(x=sia,y=GAREA))+
   theme(axis.text.x = element_text(angle = 45, hjust = 1,size=14))+
   xlab("")
 
-p.all2<-grid.arrange(p1,p2,ncol=1)
+p3<-ggplot(rolle_bld_out@data, aes(x=sia,y=ebf))+
+  geom_bar(stat = "identity")+
+  facet_wrap(facets = "GBAUP",ncol = 2)+
+  theme_bw()+
+  ggtitle(paste("SIA Gebaeudetypen (EBF Summe)",sep=""))+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1,size=14))+
+  xlab("")
+
+p.all2<-grid.arrange(p1,p2,p3,ncol=1)
 p.all2
 ```
 
 
 ##Karte mit SIA Gebäudetypen
 
-```{r geoviz, fig.width = 12, fig.height = 8}
+```{r geoviz, fig.width = 10, fig.height = 12}
 #erst alle daten in wgs projezieren fuer leaflet projektion
 rolle_bld_out.wgs<-spTransform(rolle_bld_out,CRSobj = CRS("+init=epsg:4326"))
 
@@ -86,6 +109,7 @@ pal_sia <- colorFactor(palette="Set3", rolle_bld_out.wgs$sia)
 pal_heiz <- colorFactor(palette="Set1", factor(rolle_bld_out.wgs$GHEIZ_text))
 pal_energ <- colorFactor(palette="Set1", factor(rolle_bld_out.wgs$GENHZ_text))
 pal_alter <- colorFactor(palette="YlOrRd", factor(rolle_bld_out.wgs$GBAUP))
+pal_ebf <- colorBin(palette="YlOrRd",bins = 4, rolle_bld_out.wgs$ebf)
 
 
 #visualisierung mit leaflet
@@ -135,16 +159,27 @@ m <- leaflet() %>%
               popup=rolle_bld_out.wgs$GBAUP,
               group = "Alter")%>%
   
+  addPolygons(data=rolle_bld_out.wgs,
+              stroke = TRUE,
+              fillOpacity = 1, 
+              color = ~pal_ebf(rolle_bld_out.wgs$ebf),
+              opacity = 1,
+              weight=1,
+              fillColor = ~pal_ebf(rolle_bld_out.wgs$ebf),
+              popup=as.character(rolle_bld_out.wgs$ebf),
+              group = "EBF")%>%
+  
   addLayersControl(
     baseGroups = c("OSM (b/w)", "OSM","ESRI"),
-    overlayGroups = c("SIA Typen","Heizung","Energie","Alter"),
+    overlayGroups = c("SIA Typen","Heizung","Energie","Alter","EBF"),
     options = layersControlOptions(collapsed = F)
   )%>%
-  hideGroup(c("Heizung","Energie","Alter"))%>%
+  hideGroup(c("Heizung","Energie","Alter","EBF"))%>%
   addLegend(title = "SIA Typen", pal = pal_sia, values = rolle_bld_out.wgs$sia, opacity = 1,position = "bottomright")%>%
   addLegend(title = "Heizung", pal = pal_heiz, values = rolle_bld_out.wgs$GHEIZ_text, opacity = 1,position = "bottomleft")%>%
   addLegend(title = "Energie", pal = pal_energ, values = rolle_bld_out.wgs$GENHZ_text, opacity = 1,position = "bottomleft")%>%
-  addLegend(title = "Alter", pal = pal_alter, values = rolle_bld_out.wgs$GBAUP, opacity = 1,position = "bottomleft")
+  addLegend(title = "Alter", pal = pal_alter, values = rolle_bld_out.wgs$GBAUP, opacity = 1,position = "bottomleft")%>%
+  addLegend(title = "EBF", pal = pal_ebf, values = rolle_bld_out.wgs$ebf, opacity = 1,position = "bottomright")
 
 #leaflet karte ausführen
 m
@@ -156,7 +191,7 @@ m
 wd<-getwd()
 htmlwidgets::saveWidget(m, file=paste(wd,"/output/map/mapSia.html",sep=""),selfcontained = T)
 
-ggsave(p.all,filename = "output/viz/buildingPlotSia.png",dpi = 500,width = 22,height = 15)
-ggsave(p.all2,filename = "output/viz/buildingPlotSia_age.png",dpi = 500,width = 22,height = 25)
+ggsave(p.all,filename = "output/viz/buildingPlotSia.png",dpi = 500,width = 22,height = 20)
+ggsave(p.all2,filename = "output/viz/buildingPlotSia_age.png",dpi = 500,width = 22,height = 30)
 ```
 
