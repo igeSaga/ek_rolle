@@ -1,5 +1,5 @@
 ---
-title: "Kartierung der Gebäude in Rolle"
+title: "Gerbäudedetails für Rolle & Mont-Sur-Rolle"
 author: "Curdin Derungs"
 date: "July 2018"
 output:
@@ -78,13 +78,15 @@ p.all2
 
 ##Karte mit SIA Gebäudetypen
 
-```{r geoviz, fig.width = 8, fig.height = 5.5}
+```{r geoviz, fig.width = 12, fig.height = 8}
 #erst alle daten in wgs projezieren fuer leaflet projektion
 rolle_bld_out.wgs<-spTransform(rolle_bld_out,CRSobj = CRS("+init=epsg:4326"))
 
 pal_sia <- colorFactor(palette="Set3", rolle_bld_out.wgs$sia)
 pal_heiz <- colorFactor(palette="Set1", factor(rolle_bld_out.wgs$GHEIZ_text))
 pal_energ <- colorFactor(palette="Set1", factor(rolle_bld_out.wgs$GENHZ_text))
+pal_alter <- colorFactor(palette="YlOrRd", factor(rolle_bld_out.wgs$GBAUP))
+
 
 #visualisierung mit leaflet
 m <- leaflet() %>%
@@ -123,15 +125,26 @@ m <- leaflet() %>%
               popup=rolle_bld_out.wgs$GENHZ_text,
               group = "Energie")%>%
   
+      addPolygons(data=rolle_bld_out.wgs,
+              stroke = TRUE,
+              fillOpacity = 1, 
+              color = ~pal_alter(rolle_bld_out.wgs$GBAUP),
+              opacity = 1,
+              weight=1,
+              fillColor = ~pal_alter(rolle_bld_out.wgs$GBAUP),
+              popup=rolle_bld_out.wgs$GBAUP,
+              group = "Alter")%>%
+  
   addLayersControl(
     baseGroups = c("OSM (b/w)", "OSM","ESRI"),
-    overlayGroups = c("SIA Typen","Heizung","Energie"),
+    overlayGroups = c("SIA Typen","Heizung","Energie","Alter"),
     options = layersControlOptions(collapsed = F)
   )%>%
-  hideGroup(c("Heizung","Energie"))%>%
-  addLegend(pal = pal_sia, values = rolle_bld_out.wgs$sia, opacity = 1,position = "bottomright")%>%
-  addLegend(pal = pal_heiz, values = rolle_bld_out.wgs$GHEIZ_text, opacity = 1,position = "bottomleft")%>%
-  addLegend(pal = pal_energ, values = rolle_bld_out.wgs$GENHZ_text, opacity = 1,position = "bottomleft")
+  hideGroup(c("Heizung","Energie","Alter"))%>%
+  addLegend(title = "SIA Typen", pal = pal_sia, values = rolle_bld_out.wgs$sia, opacity = 1,position = "bottomright")%>%
+  addLegend(title = "Heizung", pal = pal_heiz, values = rolle_bld_out.wgs$GHEIZ_text, opacity = 1,position = "bottomleft")%>%
+  addLegend(title = "Energie", pal = pal_energ, values = rolle_bld_out.wgs$GENHZ_text, opacity = 1,position = "bottomleft")%>%
+  addLegend(title = "Alter", pal = pal_alter, values = rolle_bld_out.wgs$GBAUP, opacity = 1,position = "bottomleft")
 
 #leaflet karte ausführen
 m
